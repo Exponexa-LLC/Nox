@@ -34,15 +34,25 @@ WOLF_PALETTE = {
 }
 
 #: 10 linhas de pixels x 12 colunas ("." = transparente).
+#
+# A expressão está nos olhos (linhas 3-4) e na boca (linhas 6-7):
+#
+#   olhos    colunas 3-4 e 7-8, simétricos em torno do centro. O branco (W)
+#            fica por fora e a pupila (K) por dentro — com dois pixels de
+#            largura não existe "centro", e é este arranjo que lê como olho
+#            vivo em vez de vesgo.
+#   boca     curva ∪: os cantos (linha 6, colunas 3 e 8) ficam ACIMA do meio
+#            (linha 7, colunas 4-7). Uma faixa reta aqui deixava o mascote
+#            com cara de sério.
 WOLF_PIXELS: Tuple[str, ...] = (
     "..C......C..",
     "...P....M...",
     "..PPPPMMMM..",
-    ".PWWPMMMWWM.",
-    ".PWKMMMMKWM.",
+    ".PPWWPMWWMM.",
+    ".PPWKMMKWMM.",
     ".PMMMMMMMMD.",
-    "PMMKKKKKKDDD",
-    "MM.MMMMMD.DD",
+    "PMMKMMMMKDDD",
+    "MM.MKKKKD.DD",
     ".MMM.MM.DDD.",
     "M..M....D..D",
 )
