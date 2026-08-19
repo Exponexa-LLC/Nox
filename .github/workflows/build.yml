@@ -92,6 +92,11 @@ jobs:
           if ($saida -notmatch "nenhuma chamada ao modelo") { throw "cabeçalho do diagnóstico ausente" }
           if ($saida -notmatch "claude") { throw "diagnóstico não mencionou a CLI do Claude" }
           if ($codigo -ne 1) { throw "esperava código 1 sem a CLI, veio $codigo" }
+          Write-Host "ok: o diagnóstico apontou a falta da CLI, como deve"
+          # O wrapper do Actions encerra o passo com `exit $LASTEXITCODE`, e aqui
+          # o último comando saiu com 1 DE PROPÓSITO. Sem isto, o passo herdaria
+          # esse código e falharia com todas as asserções aprovadas.
+          exit 0
 
       - name: smoke — a TUI abre (driver headless)
         shell: pwsh
