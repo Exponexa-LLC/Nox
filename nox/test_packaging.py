@@ -1,0 +1,418 @@
+# -*- coding: utf-8 -*-
+"""Testes do empacotamento: recursos congelados, ambiente, dispatcher e setup.
+
+Rodar com:
+
+    python -m nox.test_packaging      (com o ambiente do projeto ativo)
+
+Nenhuma chamada ao Claude, nenhuma sonda, nenhuma conexão. O estado "congelado"
+é simulado com `sys.frozen`/`sys._MEIPASS` em pasta temporária — o PyInstaller
+não precisa estar instalado para estes testes rodarem.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import os
+import shutil
+import sys
+import tempfile
+
+from . import backends
+from . import frozen
+from . import remote_ssh
+from . import setup_check
+from . import __main__ as principal
+from . import __version__
+from .test_models import fake_runner
+
+#: Raiz do projeto e caminhos de empacotamento, derivados deste arquivo.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SPEC = os.path.join(PROJECT_ROOT, "packaging", "nox.spec")
+VERSION_CHECK = os.path.join(PROJECT_ROOT, "packaging", "version_check.py")
+
+
+class Congelado(object):
+    """Finge um bundle do PyInstaller, e desfaz tudo no fim."""
+
+    def __init__(self, com_recurso=True, ambiente=None):
+        self.raiz = tempfile.mkdtemp(prefix="nox-bundle-")
+        if com_recurso:
+            os.makedirs(os.path.join(self.raiz, "nox"))
+            with open(os.path.join(self.raiz, "nox", "theme.tcss"), "w") as h:
+                h.write("Screen { background: #0e0f12; }")
+        self._frozen_antes = getattr(sys, "frozen", None)
+        self._meipass_antes = getattr(sys, "_MEIPASS", None)
+        self._environ_antes = dict(os.environ)
+        if ambiente:
+            os.environ.update(ambiente)
+        sys.frozen = True
+        sys._MEIPASS = self.raiz
+
+    def close(self):
+        try:
+            if self._frozen_antes is None:
+                if hasattr(sys, "frozen"):
+                    del sys.frozen
+            else:
+                sys.frozen = self._frozen_antes
+            if self._meipass_antes is None:
+                if hasattr(sys, "_MEIPASS"):
+                    del sys._MEIPASS
+            else:
+                sys._MEIPASS = self._meipass_antes
+            os.environ.clear()
+            os.environ.update(self._environ_antes)
+        finally:
+            shutil.rmtree(self.raiz, ignore_errors=True)
+
+
+# ------------------------------------------------ recursos (theme.tcss)
+
+
+async def test_resource_path_fora_do_bundle():
+    """Execução normal: resolve ao lado do módulo, como sempre."""
+    assert not frozen.is_frozen()
+    caminho = frozen.resource_path("theme.tcss", principal.__file__)
+    assert os.path.isfile(caminho), caminho
+    assert os.path.basename(os.path.dirname(caminho)) == "nox"
+
+
+async def test_resource_path_dentro_do_bundle():
+    bundle = Congelado()
+    try:
+        assert frozen.is_frozen()
+        caminho = frozen.resource_path("theme.tcss")
+        assert caminho == os.path.join(bundle.raiz, "nox", "theme.tcss")
+        assert os.path.isfile(caminho)
+    finally:
+        bundle.close()
+
+
+async def test_resource_path_na_raiz_do_bundle():
+    """Se o .spec puser o recurso na raiz, ainda assim achamos."""
+    bundle = Congelado(com_recurso=False)
+    try:
+        with open(os.path.join(bundle.raiz, "theme.tcss"), "w") as handle:
+            handle.write("Screen {}")
+        assert frozen.resource_path("theme.tcss") == os.path.join(
+            bundle.raiz, "theme.tcss")
+    finally:
+        bundle.close()
+
+
+async def test_css_path_do_app_e_absoluto_e_existe():
+    assert os.path.isabs(str(principal.NoxApp.CSS_PATH))
+    assert os.path.isfile(str(principal.NoxApp.CSS_PATH))
+
+
+# --------------------------------------- ambiente do processo-filho
+
+
+async def test_clean_env_fora_do_bundle_nao_remove_nada():
+    ambiente = frozen.clean_env({"LD_LIBRARY_PATH": "/qualquer", "X": "1"})
+    assert ambiente["LD_LIBRARY_PATH"] == "/qualquer"
+    assert ambiente["X"] == "1"
+
+
+async def test_clean_env_restaura_valor_anterior():
+    """PyInstaller guarda o valor original em `<nome>_ORIG`."""
+    bundle = Congelado(ambiente={
+        "LD_LIBRARY_PATH": "/bundle/libs",
+        "LD_LIBRARY_PATH_ORIG": "/usr/lib",
+        "DYLD_LIBRARY_PATH": "/bundle/dyld",
+        "_MEIPASS2": "/tmp/x",
+        "_PYI_APPLICATION_HOME_DIR": "/tmp/y",
+        "PATH": "/usr/bin",
+    })
+    try:
+        ambiente = frozen.clean_env()
+        assert ambiente["LD_LIBRARY_PATH"] == "/usr/lib", ambiente.get("LD_LIBRARY_PATH")
+        assert "DYLD_LIBRARY_PATH" not in ambiente, "sem _ORIG, some"
+        assert "_MEIPASS2" not in ambiente
+        assert "_PYI_APPLICATION_HOME_DIR" not in ambiente
+        assert ambiente["PATH"] == "/usr/bin", "o resto do ambiente é preservado"
+    finally:
+        bundle.close()
+
+
+async def test_backend_nao_vaza_variaveis_do_bundle():
+    bundle = Congelado(ambiente={
+        "LD_LIBRARY_PATH": "/bundle/libs",
+        "_MEIPASS2": "/tmp/x",
+        "ANTHROPIC_API_KEY": "fake-para-teste",
+    })
+    try:
+        ambiente = backends.ClaudeCLIBackend().env()
+        assert "LD_LIBRARY_PATH" not in ambiente
+        assert "_MEIPASS2" not in ambiente
+        assert "ANTHROPIC_API_KEY" not in ambiente, "a regra antiga continua"
+    finally:
+        bundle.close()
+
+
+async def test_ssh_nao_vaza_variaveis_do_bundle():
+    bundle = Congelado(ambiente={
+        "LD_LIBRARY_PATH": "/bundle/libs",
+        "LD_LIBRARY_PATH_ORIG": "/usr/lib",
+        "ANTHROPIC_API_KEY": "fake-para-teste",
+    })
+    try:
+        ambiente = remote_ssh._clean_env()
+        assert ambiente["LD_LIBRARY_PATH"] == "/usr/lib"
+        assert "ANTHROPIC_API_KEY" not in ambiente
+    finally:
+        bundle.close()
+
+
+# ------------------------------------------------------- dispatcher
+
+
+async def test_parse_command():
+    casos = [
+        ([], "tui"),
+        (["setup"], "setup"),
+        (["--version"], "version"),
+        (["-V"], "version"),
+        (["version"], "version"),
+        (["--help"], "help"),
+        (["-h"], "help"),
+        (["help"], "help"),
+        (["conversar"], "desconhecido"),
+        (["--sonda"], "desconhecido"),
+    ]
+    for argv, esperado in casos:
+        comando, _resto = principal.parse_command(argv)
+        assert comando == esperado, (argv, comando)
+
+
+async def test_version_imprime_a_versao(capturado=None):
+    saida = io.StringIO()
+    antes, sys.stdout = sys.stdout, saida
+    try:
+        codigo = principal.main(["--version"])
+    finally:
+        sys.stdout = antes
+    assert codigo == 0
+    assert __version__ in saida.getvalue(), saida.getvalue()
+    assert "Exponexa" in saida.getvalue()
+
+
+async def test_help_e_comando_desconhecido():
+    for argv, esperado in ((["--help"], 0), (["xyz"], 2)):
+        saida = io.StringIO()
+        antes, sys.stdout = sys.stdout, saida
+        try:
+            codigo = principal.main(argv)
+        finally:
+            sys.stdout = antes
+        assert codigo == esperado, (argv, codigo)
+        assert "nox setup" in saida.getvalue(), saida.getvalue()
+
+
+async def test_dispatcher_chamado_uma_unica_vez():
+    """Trava de regressão: um `main`, e uma chamada só no guarda de módulo.
+
+    Duas chamadas em sequência (`main()` seguido de `sys.exit(main())`) fariam
+    o dispatcher rodar duas vezes: `--version` imprimiria duas linhas e a TUI
+    abriria depois de já ter aberto.
+    """
+    import ast
+
+    fonte = io.open(principal.__file__, encoding="utf-8").read()
+    arvore = ast.parse(fonte)
+
+    definicoes = [n for n in arvore.body
+                  if isinstance(n, ast.FunctionDef) and n.name == "main"]
+    assert len(definicoes) == 1, [d.lineno for d in definicoes]
+
+    guardas = [n for n in arvore.body
+               if isinstance(n, ast.If) and "__name__" in ast.dump(n.test)]
+    assert len(guardas) == 1, len(guardas)
+
+    chamadas = [n for n in ast.walk(guardas[0])
+                if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "main"]
+    assert len(chamadas) == 1, [c.lineno for c in chamadas]
+
+    # e o código de saída precisa ser propagado (sys.exit ou raise SystemExit)
+    corpo = guardas[0].body
+    assert len(corpo) == 1, len(corpo)
+    texto = ast.dump(corpo[0])
+    assert "'exit'" in texto or "SystemExit" in texto, texto
+
+
+async def test_saida_de_version_tem_uma_linha_so():
+    """Se o dispatcher rodasse duas vezes, apareceriam duas linhas."""
+    saida = io.StringIO()
+    antes, sys.stdout = sys.stdout, saida
+    try:
+        principal.main(["--version"])
+    finally:
+        sys.stdout = antes
+    linhas = [l for l in saida.getvalue().splitlines() if l.strip()]
+    assert len(linhas) == 1, linhas
+    assert linhas[0].count("Exponexa") == 1, linhas[0]
+
+
+async def test_main_sem_argumento_abriria_a_tui():
+    """Não abrimos a TUI aqui: basta provar que o roteamento cai nela."""
+    comando, resto = principal.parse_command([])
+    assert (comando, resto) == ("tui", [])
+
+
+# ----------------------------------------------------------- setup
+
+
+async def test_setup_checks_sem_chamar_o_modelo():
+    runner = fake_runner()
+    checks = setup_check.run_checks(runner=runner)
+    nomes = [c.nome for c in checks]
+    assert nomes == ["sistema", "comando nox", "claude cli", "autenticação",
+                     "config", "provedor", "perfil padrão"], nomes
+    for chamada in runner.chamadas:
+        assert "-p" not in chamada, chamada
+
+
+async def test_setup_nao_exibe_credencial():
+    autenticado = {"loggedIn": True, "authMethod": "claude.ai",
+                   "subscriptionType": "max", "email": "pessoa@exemplo.com",
+                   "orgId": "org-secreto", "accessToken": "tok-123"}
+    check = setup_check.check_autenticacao(autenticado)
+    assert check.estado == setup_check.OK
+    texto = check.detalhe + check.dica
+    for proibido in ("tok-123", "org-secreto", "pessoa@exemplo.com"):
+        assert proibido not in texto, proibido
+    assert "max" in texto and "claude.ai" in texto
+
+
+async def test_setup_sem_autenticacao_orienta_o_usuario():
+    check = setup_check.check_autenticacao({"loggedIn": False})
+    assert check.estado == setup_check.FALTA
+    assert "claude auth login" in check.dica
+    check_vazio = setup_check.check_autenticacao({})
+    assert "não copia" in check_vazio.dica or "não guarda" in check_vazio.dica
+
+
+async def test_setup_nao_finge_lista_de_provedores():
+    check = setup_check.check_provedor()
+    funcionais = setup_check.provedores_funcionais()
+    assert "echo" not in funcionais, "eco local não é provedor de verdade"
+    if len(funcionais) == 1:
+        assert "único funcional" in check.detalhe, check.detalhe
+        assert "ponto" in check.detalhe or "extensão" in check.detalhe
+
+
+async def test_setup_preserva_config():
+    pasta = tempfile.mkdtemp(prefix="nox-setup-")
+    try:
+        caminho = os.path.join(pasta, "config.json")
+        with open(caminho, "w", encoding="utf-8") as handle:
+            json.dump({"provider": "claude", "timeout": 300}, handle)
+        antes = open(caminho, encoding="utf-8").read()
+        check = setup_check.check_config(caminho)
+        assert check.estado == setup_check.OK
+        assert "preservado" in check.detalhe
+        assert open(caminho, encoding="utf-8").read() == antes, "não pode reescrever"
+    finally:
+        shutil.rmtree(pasta, ignore_errors=True)
+
+
+async def test_setup_render_e_codigo_de_saida():
+    ok = [setup_check.Check("a", setup_check.OK, "tudo certo")]
+    falta = ok + [setup_check.Check("b", setup_check.FALTA, "falta isto")]
+    assert setup_check.exit_code(ok) == 0
+    assert setup_check.exit_code(falta) == 1
+    texto = setup_check.render(falta)
+    assert "pendências" in texto and "b" in texto
+    assert "nenhuma chamada ao modelo" in texto
+
+
+# --------------------------------------------------- spec e versão
+
+
+async def test_spec_existe_e_e_onedir():
+    assert os.path.isfile(SPEC), SPEC
+    conteudo = open(SPEC, encoding="utf-8").read()
+    assert "COLLECT(" in conteudo, "onedir precisa do COLLECT"
+    assert "exclude_binaries=True" in conteudo, "onefile não é o modo escolhido"
+    assert "theme.tcss" in conteudo, "o tema precisa ir para o bundle"
+    assert "console=True" in conteudo, "é uma TUI: precisa de console"
+    assert "upx=False" in conteudo
+
+
+async def test_version_check_concorda():
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "packaging"))
+    try:
+        import version_check
+    finally:
+        sys.path.pop(0)
+    pacote, projeto = version_check.check()
+    assert pacote == projeto == __version__, (pacote, projeto, __version__)
+    assert version_check.normalize_tag("v" + __version__) == __version__
+
+
+async def test_version_check_recusa_divergencia():
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "packaging"))
+    try:
+        import version_check
+    finally:
+        sys.path.pop(0)
+    for tag_ruim in ("v9.9.9", "0.0.1", "release-1"):
+        try:
+            version_check.check(tag_ruim)
+        except SystemExit:
+            continue
+        raise AssertionError("aceitou tag divergente: " + tag_ruim)
+
+
+TESTS = [
+    test_resource_path_fora_do_bundle,
+    test_resource_path_dentro_do_bundle,
+    test_resource_path_na_raiz_do_bundle,
+    test_css_path_do_app_e_absoluto_e_existe,
+    test_clean_env_fora_do_bundle_nao_remove_nada,
+    test_clean_env_restaura_valor_anterior,
+    test_backend_nao_vaza_variaveis_do_bundle,
+    test_ssh_nao_vaza_variaveis_do_bundle,
+    test_parse_command,
+    test_version_imprime_a_versao,
+    test_help_e_comando_desconhecido,
+    test_dispatcher_chamado_uma_unica_vez,
+    test_saida_de_version_tem_uma_linha_so,
+    test_main_sem_argumento_abriria_a_tui,
+    test_setup_checks_sem_chamar_o_modelo,
+    test_setup_nao_exibe_credencial,
+    test_setup_sem_autenticacao_orienta_o_usuario,
+    test_setup_nao_finge_lista_de_provedores,
+    test_setup_preserva_config,
+    test_setup_render_e_codigo_de_saida,
+    test_spec_existe_e_e_onedir,
+    test_version_check_concorda,
+    test_version_check_recusa_divergencia,
+]
+
+
+async def _run_all():
+    falhas = 0
+    for test in TESTS:
+        nome = test.__name__
+        try:
+            await test()
+        except Exception as erro:
+            falhas += 1
+            print("falhou  {0}: {1}: {2}".format(nome, type(erro).__name__, erro))
+        else:
+            print("ok      {0}".format(nome))
+    print("")
+    print("{0} testes, {1} falha(s)".format(len(TESTS), falhas))
+    return falhas
+
+
+def main() -> int:
+    return 1 if asyncio.run(_run_all()) else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

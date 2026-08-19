@@ -11,8 +11,9 @@ saídas de comando em bloco indentado. A interface fala apenas com a camada
 from __future__ import annotations
 
 import os
+import sys
 import time
-from typing import Optional
+from typing import List, Optional, Tuple
 
 import subprocess
 
@@ -24,9 +25,11 @@ from textual.timer import Timer
 from textual.widgets import Input, Markdown, Static
 
 from . import APP_TITLE
+from . import __version__
 from . import backends
 from . import commands
 from . import config
+from . import frozen
 from . import model_discovery
 from . import pickers
 from . import policy as policy_mod
@@ -35,6 +38,7 @@ from . import remote_hosts
 from . import remote_log
 from . import remote_ops
 from . import remote_ssh
+from . import setup_check
 from . import wolf
 
 #: Marcadores do transcript (discretos, no estilo do terminal).
@@ -111,7 +115,9 @@ class PromptInput(Input):
 class NoxApp(App):
     """A TUI. Toda a conversa passa por `self.backend`."""
 
-    CSS_PATH = "theme.tcss"
+    # caminho absoluto: dentro de um bundle PyInstaller o arquivo não fica
+    # ao lado do módulo, e o Textual não teria como encontrá-lo
+    CSS_PATH = frozen.resource_path("theme.tcss", __file__)
     TITLE = APP_TITLE
 
     BINDINGS = [
@@ -1291,9 +1297,57 @@ class NoxApp(App):
         )
 
 
-def main() -> None:
+#: Uso mostrado por `nox --help`.
+USAGE = """Exponexa — harness de terminal para o Claude Code.
+
+  nox               abre a interface (padrão)
+  nox setup         diagnóstico local: sistema, CLI do Claude, autenticação
+  nox --version     mostra a versão
+  nox --help        mostra esta ajuda
+
+O diagnóstico não chama o modelo e não exibe credenciais."""
+
+
+def parse_command(argv) -> Tuple[str, List[str]]:
+    """Traduz argv em (comando, resto). Sem argumento, é a interface.
+
+    Função pura, para o roteamento ser testável sem abrir a TUI.
+    """
+    argumentos = list(argv or [])
+    if not argumentos:
+        return "tui", []
+    primeiro = argumentos[0]
+    if primeiro in ("-V", "--version", "version"):
+        return "version", argumentos[1:]
+    if primeiro in ("-h", "--help", "help"):
+        return "help", argumentos[1:]
+    if primeiro == "setup":
+        return "setup", argumentos[1:]
+    return "desconhecido", argumentos
+
+
+def main(argv=None) -> int:
+    """Ponto de entrada do comando `nox` e de `python -m nox`."""
+    comando, resto = parse_command(
+        sys.argv[1:] if argv is None else argv)
+    if comando == "version":
+        print("Exponexa (nox) {0}".format(__version__))
+        return 0
+    if comando == "help":
+        print(USAGE)
+        return 0
+    if comando == "setup":
+        checks = setup_check.run_checks()
+        print(setup_check.render(checks))
+        return setup_check.exit_code(checks)
+    if comando == "desconhecido":
+        print("comando desconhecido: {0}".format(" ".join(resto)))
+        print()
+        print(USAGE)
+        return 2
     NoxApp().run()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

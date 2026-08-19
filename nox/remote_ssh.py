@@ -22,6 +22,7 @@ import subprocess
 import time
 from typing import Callable, List, Optional
 
+from . import frozen
 from . import remote_hosts
 
 #: Segundos até desistir do handshake e da operação inteira.
@@ -162,8 +163,13 @@ def run_process(comando: List[str], timeout: float):
 
 
 def _clean_env():
-    """Ambiente do filho sem credencial de modelo — como o backend já faz."""
-    ambiente = dict(os.environ)
+    """Ambiente do filho sem credencial de modelo nem rastros do bundle.
+
+    O `ssh` é ainda mais sensível a `LD_LIBRARY_PATH` herdado do PyInstaller
+    do que a CLI: bibliotecas de criptografia trocadas quebram a conexão de
+    um jeito que não parece problema de empacotamento.
+    """
+    ambiente = frozen.clean_env()
     for chave in list(ambiente):
         if chave.upper().startswith("ANTHROPIC_"):
             ambiente.pop(chave, None)

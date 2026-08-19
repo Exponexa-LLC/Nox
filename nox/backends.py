@@ -25,6 +25,7 @@ import sys
 import uuid
 from typing import Dict, List, Optional, Tuple, Type
 
+from . import frozen
 from . import wolf
 
 #: Tempo máximo, em segundos, de espera por uma resposta.
@@ -133,8 +134,13 @@ class Backend(object):
         """Aplica preferências vindas do `config.Config`."""
 
     def env(self) -> Dict[str, str]:
-        """Ambiente do processo filho, com as credenciais alheias removidas."""
-        env = dict(os.environ)
+        """Ambiente do processo filho, sem credenciais alheias nem rastros do bundle.
+
+        Congelado pelo PyInstaller, o runtime reescreve variáveis de biblioteca
+        que o filho herdaria — e o `claude` poderia carregar a biblioteca
+        errada. `frozen.clean_env` desfaz isso antes de tirarmos as credenciais.
+        """
+        env = frozen.clean_env()
         for key in CREDENTIAL_ENV:
             if key not in self.ENV_ALLOW:
                 env.pop(key, None)
