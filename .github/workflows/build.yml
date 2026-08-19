@@ -1,0 +1,144 @@
+name: build
+
+# Separado do workflow de testes de propósito: testes rodam a cada push, o
+# build só quando alguém pede ou quando uma tag semver aparece.
+#
+# Nesta fase o workflow NÃO publica nada: ele constrói, verifica e sobe o
+# resultado como artefato do run. Criar Release é passo humano, depois.
+#
+# Só Windows x64 — a única plataforma com bundle validado. Linux e macOS
+# entram quando tiverem build e smoke test verdes, não antes.
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: "Tag semver para conferir contra a versão do pacote (opcional)"
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  # Fixados para o build ser reprodutível; atualizar é decisão consciente.
+  PYINSTALLER_VERSION: "6.22.2"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  windows-x64:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: instalar dependências de build
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "textual>=8,<9" "pyinstaller==${{ env.PYINSTALLER_VERSION }}"
+
+      - name: conferir versão (pacote × pyproject × tag)
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.version_tag }}"
+          if (-not $tag -and "${{ github.ref_type }}" -eq "tag") { $tag = "${{ github.ref_name }}" }
+          if ($tag) { python packaging/version_check.py $tag } else { python packaging/version_check.py }
+
+      - name: suítes (o bundle não sai de código quebrado)
+        shell: pwsh
+        run: |
+          $suites = @(
+            "test_packaging", "test_policy", "test_resilience", "test_remote",
+            "test_identity", "test_models", "test_backend", "test_layout",
+            "test_copy", "test_autocomplete", "test_pickers"
+          )
+          $falhas = 0
+          foreach ($s in $suites) {
+            python -m nox.$s
+            if ($LASTEXITCODE -ne 0) { $falhas++ }
+          }
+          if ($falhas -gt 0) { throw "$falhas suíte(s) falharam" }
+
+      - name: construir o bundle (onedir)
+        run: pyinstaller packaging/nox.spec --noconfirm --clean
+
+      - name: smoke — versão e ajuda
+        shell: pwsh
+        run: |
+          $exe = "dist/nox/nox.exe"
+          $versao = python packaging/version_check.py --print
+          $saida = & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "nox --version falhou" }
+          if ($saida -notmatch [regex]::Escape($versao)) { throw "versão do bundle diverge: $saida" }
+          if (@($saida).Count -ne 1) { throw "nox --version imprimiu mais de uma linha" }
+          & $exe --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "nox --help falhou" }
+          Write-Host "ok: $saida"
+
+      - name: smoke — nox setup sem a CLI do Claude
+        shell: pwsh
+        run: |
+          # O runner não tem a CLI do Claude instalada: o diagnóstico DEVE
+          # apontar a falta e sair com 1, sem quebrar e sem chamar modelo.
+          $saida = & "dist/nox/nox.exe" setup 2>&1 | Out-String
+          $codigo = $LASTEXITCODE
+          Write-Host $saida
+          if ($saida -notmatch "nenhuma chamada ao modelo") { throw "cabeçalho do diagnóstico ausente" }
+          if ($saida -notmatch "claude") { throw "diagnóstico não mencionou a CLI do Claude" }
+          if ($codigo -ne 1) { throw "esperava código 1 sem a CLI, veio $codigo" }
+
+      - name: smoke — a TUI abre (driver headless)
+        shell: pwsh
+        run: |
+          $env:TEXTUAL_DRIVER = "textual.drivers.headless_driver:HeadlessDriver"
+          $log = "smoke-tui.log"
+          $p = Start-Process -FilePath "dist/nox/nox.exe" -PassThru `
+                 -RedirectStandardOutput $log -RedirectStandardError "smoke-tui.err" `
+                 -WindowStyle Hidden
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) {
+            Get-Content $log, "smoke-tui.err" -ErrorAction SilentlyContinue
+            throw "a TUI encerrou sozinha (código $($p.ExitCode)) — deveria seguir rodando"
+          }
+          Stop-Process -Id $p.Id -Force
+          $erros = Get-Content "smoke-tui.err" -ErrorAction SilentlyContinue
+          if ($erros) { throw "stderr não vazio: $erros" }
+          Write-Host "ok: a TUI abriu e seguiu rodando"
+
+      - name: empacotar e gerar SHA256SUMS
+        shell: pwsh
+        run: |
+          $versao = python packaging/version_check.py --print
+          $nome = "nox-$versao-windows-x64.zip"
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Compress-Archive -Path "dist/nox/*" -DestinationPath "artifacts/$nome" -Force
+          $hash = (Get-FileHash "artifacts/$nome" -Algorithm SHA256).Hash.ToLower()
+          # formato do sha256sum: hash, dois espaços, nome do arquivo
+          "$hash  $nome" | Out-File -FilePath "artifacts/SHA256SUMS" -Encoding ascii
+          Get-Content "artifacts/SHA256SUMS"
+          "{0:N1} MB" -f ((Get-Item "artifacts/$nome").Length / 1MB) | Write-Host
+
+      - name: conferir o próprio checksum
+        shell: pwsh
+        run: |
+          $linha = (Get-Content "artifacts/SHA256SUMS" | Select-Object -First 1).Trim()
+          $esperado, $nome = $linha -split "\s+", 2
+          $obtido = (Get-FileHash "artifacts/$nome" -Algorithm SHA256).Hash.ToLower()
+          if ($obtido -ne $esperado) { throw "checksum não confere: $obtido != $esperado" }
+          Write-Host "checksum confere: $nome"
+
+      - name: publicar como artefato do run (não é release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: nox-windows-x64
+          path: |
+            artifacts/nox-*-windows-x64.zip
+            artifacts/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14

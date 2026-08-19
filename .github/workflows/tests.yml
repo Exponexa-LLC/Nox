@@ -39,9 +39,9 @@ jobs:
         shell: pwsh
         run: |
           $suites = @(
-            "test_policy", "test_resilience", "test_remote", "test_identity",
-            "test_models", "test_backend", "test_layout", "test_copy",
-            "test_autocomplete", "test_pickers"
+            "test_packaging", "test_policy", "test_resilience", "test_remote",
+            "test_identity", "test_models", "test_backend", "test_layout",
+            "test_copy", "test_autocomplete", "test_pickers"
           )
           $falhas = 0
           foreach ($s in $suites) {

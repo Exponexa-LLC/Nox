@@ -6,7 +6,10 @@ __pycache__/
 *.pyo
 build/
 dist/
+artifacts/
 *.egg-info/
+smoke-tui.log
+smoke-tui.err
 
 # segredos e configuração local — nada disto vai para o repositório
 .env
