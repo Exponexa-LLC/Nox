@@ -1,0 +1,223 @@
+/* 🐺 Exponexa — tema terminal-native: grafite, sem molduras por mensagem.
+   As cores vivas ficam só nos marcadores; o resto é contraste mínimo. */
+
+Screen {
+    background: #0e0f12;
+    color: #d7dde5;
+    layout: vertical;
+}
+
+/* --------------------------------------------------- cabeçalho (5 + borda = 6) */
+
+#header {
+    /* 5 linhas do mascote + 1 de borda = 6 linhas no total */
+    height: 6;
+    background: #0e0f12;
+    border-bottom: hkey #23262d;
+    padding: 0 2;
+    layout: horizontal;
+}
+
+/* lobinho pixelado estático: 12 colunas x 5 linhas, sem animação */
+#wolf {
+    width: 14;
+    height: 5;
+    padding: 0 2 0 0;
+}
+
+#ident {
+    width: 1fr;
+    height: 5;
+    padding: 1 0 0 0;
+    layout: vertical;
+}
+
+#brand {
+    height: 1;
+}
+
+#backend {
+    height: 1;
+}
+
+#meta {
+    height: 1;
+}
+
+#workspace {
+    height: 1;
+}
+
+/* ---------------------------------------------------------------- transcript */
+
+#transcript {
+    height: 1fr;
+    padding: 1 2;
+    background: #0e0f12;
+    scrollbar-background: #0e0f12;
+    scrollbar-color: #23262d;
+    scrollbar-color-hover: #3a3f4b;
+    scrollbar-size: 1 1;
+}
+
+/* Cada bloco é um widget selecionável; nada de molduras ou fundos. */
+.block {
+    width: 1fr;
+    height: auto;
+    margin: 0 0 1 0;
+    background: transparent;
+}
+
+.sys-block {
+    padding: 0 0 0 2;
+}
+
+.agent-block {
+    layout: horizontal;
+}
+
+.agent-mark {
+    width: 2;
+    height: 1;
+}
+
+.agent-md {
+    width: 1fr;
+    height: auto;
+    background: transparent;
+    margin: 0;
+    padding: 0;
+}
+
+/* Markdown achatado: sem margens largas, sem cabeçalho centralizado com fundo */
+.agent-md MarkdownBlock {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+}
+
+.agent-md MarkdownParagraph,
+.agent-md MarkdownBulletList,
+.agent-md MarkdownOrderedList,
+.agent-md MarkdownTable,
+.agent-md MarkdownBlockQuote {
+    margin: 0 0 1 0;
+}
+
+/* itens de lista coladinhos, como no terminal */
+.agent-md MarkdownListItem,
+.agent-md MarkdownOrderedListItem,
+.agent-md MarkdownUnorderedListItem {
+    margin: 0;
+    padding: 0;
+}
+
+.agent-md MarkdownList MarkdownParagraph {
+    margin: 0;
+}
+
+.agent-md MarkdownH1,
+.agent-md MarkdownH2,
+.agent-md MarkdownH3,
+.agent-md MarkdownH4,
+.agent-md MarkdownH5,
+.agent-md MarkdownH6 {
+    margin: 0 0 1 0;
+    padding: 0;
+    background: transparent;
+    color: #d7dde5;
+    text-style: bold;
+    content-align: left middle;
+    text-align: left;
+}
+
+.agent-md MarkdownFence {
+    margin: 0 0 1 0;
+    padding: 0 1;
+    background: #16181d;
+    color: #c8d0da;
+    max-height: 24;
+}
+
+.agent-md MarkdownHorizontalRule {
+    margin: 0 0 1 0;
+    border-bottom: hkey #23262d;
+}
+
+.agent-md MarkdownBlockQuote {
+    border-left: outer #2a2e37;
+    padding: 0 0 0 1;
+}
+
+/* --------------------------------------------------- indicador de processamento */
+
+#statusbar {
+    height: 1;
+    padding: 0 2;
+    background: #0e0f12;
+}
+
+#statusbar.hidden {
+    display: none;
+}
+
+/* ------------------------------------------------------------------- entrada */
+
+#promptbar {
+    height: 3;
+    margin: 0 1;
+    border: round #2a2e37;
+    background: #0e0f12;
+    layout: horizontal;
+}
+
+#promptbar:focus-within {
+    border: round #3a4150;
+}
+
+#promptmark {
+    width: 3;
+    height: 1;
+    padding: 0 1;
+}
+
+#prompt {
+    width: 1fr;
+    height: 1;
+    border: none;
+    background: #0e0f12;
+    color: #d7dde5;
+    padding: 0;
+}
+
+#prompt > .input--placeholder {
+    color: #4d5666;
+}
+
+/* -------------------------------------------------------------------- rodapé */
+
+#footer {
+    height: 1;
+    background: #0e0f12;
+    padding: 0 3;
+}
+
+/* --------------------------------------- autocomplete e seletores
+   Painel discreto acima da barra de prompt. Não é focável: o foco continua
+   sempre no campo de entrada. Fechado, `display: none` devolve o layout
+   exatamente ao que era antes — sem deslocar nada. */
+
+#suggestions,
+#picker {
+    height: auto;
+    max-height: 12;
+    margin: 0 1;
+    padding: 0 1;
+    border: round #2a2e37;
+    background: #0e0f12;
+}
+
+#suggestions.hidden,
+#picker.hidden {
+    display: none;
+}

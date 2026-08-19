@@ -1,0 +1,7 @@
+# Quebras de linha normalizadas: LF no repositório, o checkout adapta ao SO.
+* text=auto eol=lf
+
+# Binários que não devem passar por conversão de texto.
+*.png binary
+*.svg -text
+*.ico binary

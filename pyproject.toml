@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# O pacote importável é `nox`, mas a distribuição tem outro nome: já existe um
+# projeto de automação chamado `nox` no PyPI, e ocupar esse nome causaria
+# conflito no mesmo ambiente.
+name = "exponexa-nox"
+version = "0.6.0"
+description = "Exponexa — harness de terminal para o Claude Code, com perfis de política e confirmação explícita"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+authors = [{ name = "Exponexa LLC" }]
+keywords = ["claude", "cli", "tui", "textual", "terminal"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Utilities",
+]
+dependencies = ["textual>=8,<9"]
+
+[project.urls]
+Homepage = "https://github.com/Exponexa-LLC/Nox"
+Repository = "https://github.com/Exponexa-LLC/Nox"
+
+[project.scripts]
+# Entry point verificado: `main()` existe em nox/__main__.py e não recebe
+# argumentos. Instalado, ele cria o comando `nox` em qualquer sistema.
+nox = "nox.__main__:main"
+
+[tool.setuptools]
+packages = ["nox"]
+
+[tool.setuptools.package-data]
+# O tema é carregado por CSS_PATH em tempo de execução: sem isto, a TUI
+# instalada sobe sem estilo.
+nox = ["*.tcss"]

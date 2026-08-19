@@ -1,0 +1,36 @@
+# ambiente e artefatos de build
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+build/
+dist/
+*.egg-info/
+
+# segredos e configuração local — nada disto vai para o repositório
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+
+# estado do Exponexa: mora em ~/.nox, e cópias nunca são versionadas
+config.json
+profiles.json
+hosts.json
+models_cache.json
+*.log
+
+# arquivos pessoais e legados desta máquina — não fazem parte do projeto
+CLAUDE.md
+delet.py
+delet_user_preview.svg
+
+# ferramentas e editores
+.claude/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
