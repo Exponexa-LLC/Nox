@@ -1,4 +1,4 @@
-"""🐺 Exponexa — TUI do harness, no estilo do terminal do Claude Code.
+"""Exponexa — TUI do harness, no estilo do terminal do Claude Code.
 
 Executar com:  python -m nox   (ou o comando `nox`)
 
@@ -50,7 +50,7 @@ AMBER = "#e0a458"
 MUTED = "#7a8494"
 FAINT = "#4d5666"
 
-#: Quadros do indicador de processamento (não é o mascote — o lobo fica parado).
+#: Quadros do indicador de processamento (não é o mascote — o invasor fica parado).
 SPINNER_FRAMES = ("✻", "✽", "✳", "✢", "·", "✢", "✳", "✽")
 
 FOOTER_TEXT = "/help /new /clear /copy /model /provider /status /workspace /exit"
@@ -215,7 +215,7 @@ class NoxApp(App):
         yield Static("", id="picker", classes="hidden")
         with Horizontal(id="promptbar"):
             yield Static(Text(USER_MARK, style=AMBER), id="promptmark")
-            yield PromptInput(placeholder="fale com o lobo…", id="prompt")
+            yield PromptInput(placeholder="fale com o invasor…", id="prompt")
         yield Static(Text(FOOTER_TEXT, style=FAINT), id="footer")
 
     def _make_backend(self, provider: str) -> backends.Backend:

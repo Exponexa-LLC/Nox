@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Catálogo de perfis do 🐺 Exponexa — dados, não mecanismo.
+"""Catálogo de perfis do Exponexa — dados, não mecanismo.
 
 Três perfis embutidos, e a possibilidade de você declarar os seus em
 `~/.nox/profiles.json` (arquivo opcional, que a aplicação nunca cria sozinha).

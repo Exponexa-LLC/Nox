@@ -1,4 +1,4 @@
-"""Camada de backends do 🐺 Exponexa (pacote `nox`).
+"""Camada de backends do Exponexa (pacote `nox`).
 
 A TUI nunca fala com um provedor diretamente: ela conversa com um `Backend`.
 Isso mantém a interface intacta e deixa espaço para plugar outros provedores

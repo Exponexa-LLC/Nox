@@ -1,4 +1,4 @@
-"""🐺 Exponexa — TUI do harness (Textual), no pacote técnico `nox`.
+"""Exponexa — TUI do harness (Textual), no pacote técnico `nox`.
 
 O nome é dividido de propósito: **Exponexa** é o que o usuário vê (título da
 TUI, cabeçalho, boas-vindas) e **nox** é o nome técnico — pacote, pasta, módulo

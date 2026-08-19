@@ -1,4 +1,4 @@
-"""Configuração local do 🐺 Exponexa (pacote `nox`).
+"""Configuração local do Exponexa (pacote `nox`).
 
 Guarda **apenas preferências** — provedor ativo, modelo por provedor, timeout e
 workspace inicial — em `~/.nox/config.json`, fora do projeto. Instalações

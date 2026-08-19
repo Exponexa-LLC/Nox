@@ -218,16 +218,18 @@ async def test_tela_sem_nome_antigo():
 
 
 async def test_mascote_inalterado():
-    """O lobo tem de sair idêntico ao desenho de sempre — nada redesenhado."""
+    """O invasor tem de sair idêntico ao desenho de sempre — nada redesenhado."""
     async with make_app().run_test(size=SIZE) as pilot:
         desenhado = pilot.app.query_one("#wolf", Static).content
         esperado = wolf.wolf_art()
         assert desenhado.plain == esperado.plain, desenhado.plain
         assert len(desenhado.plain.split(chr(10))) == wolf.WOLF_HEIGHT
         assert wolf.WOLF_WIDTH == 12 and wolf.WOLF_HEIGHT == 5
-        # a paleta original continua a mesma
-        assert wolf.WOLF_PALETTE["E"] == "#e6e1d8"
-        assert len(wolf.WOLF_PALETTE) == 8
+        # a grade e a paleta do mascote continuam as mesmas
+        assert len(wolf.WOLF_PIXELS) == 10
+        assert all(len(linha) == 12 for linha in wolf.WOLF_PIXELS)
+        assert wolf.WOLF_PALETTE["P"] == "#a970ff"
+        assert set(wolf.WOLF_PALETTE) == set("PMDWKC")
 
 
 async def test_modelo_workspace_e_sessao_preservados():

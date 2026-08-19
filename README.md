@@ -1,4 +1,4 @@
-# 🐺 Exponexa
+# Exponexa
 
 Um harness de terminal para conversar com o Claude pela CLI oficial do Claude
 Code — com interface própria, perfis de política e confirmação explícita para
@@ -12,7 +12,7 @@ O nome é dividido de propósito:
 | **nox** | o nome técnico: pacote Python, módulo e comando de terminal |
 
 ```
-🐺 Exponexa
+Exponexa
 backend  claude cli · pronto · perfil conversa
 modelo   sonnet   sessão 25dd6014
 workspace  ~/projetos/meu-app

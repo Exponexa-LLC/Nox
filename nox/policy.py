@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Política declarativa do 🐺 Exponexa: tetos absolutos e capacidades.
+"""Política declarativa do Exponexa: tetos absolutos e capacidades.
 
 O desenho tem duas camadas, e a diferença entre elas é proposital:
 

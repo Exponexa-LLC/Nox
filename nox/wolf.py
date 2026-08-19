@@ -1,4 +1,4 @@
-"""Mascote estático, dados falsos e textos do 🐺 Exponexa (pacote `nox`).
+"""Mascote estático, dados falsos e textos do Exponexa (pacote `nox`).
 
 Nada aqui faz rede, disco ou chamada de modelo: é tudo local e simulado.
 """
@@ -12,39 +12,39 @@ from typing import List, Tuple
 from rich.text import Text
 
 # --------------------------------------------------------------------------
-# Mascote — versão compacta e ESTÁTICA do lobo pixelado original.
+# Mascote — versão compacta e ESTÁTICA do invasor.
 #
-# Origem: arte-vetor do mascote (59x50 px), reamostrada para 12x10.
-# O raster original foi reamostrado por média de área para 12x10 pixels,
-# preservando proporção, silhueta e a paleta exata do mascote. Cada linha de
-# texto desenha dois pixels com meio-blocos, então 10 px = 5 linhas.
-# Não há animação: existe um único quadro, sempre de boca fechada.
+# Mesma técnica de sempre: 12x10 pixels desenhados com meio-blocos, dois
+# pixels por linha de texto, então 10 px = 5 linhas. Não há animação: existe
+# um único quadro.
+#
+# A grade abaixo é gerada: `python gerar.py --wolf` em `invasor-mascote/`
+# imprime exatamente estas linhas, já sombreadas. A mesma criatura existe lá
+# em 60 colunas, para imprimir solta no terminal.
 # --------------------------------------------------------------------------
 
-#: Paleta original do mascote (nenhuma cor nova foi inventada).
+#: Paleta do invasor: roxo com antenas ciano e olhos brancos.
 WOLF_PALETTE = {
-    "E": "#e6e1d8",  # pelo claro
-    "D": "#d3ccc1",  # pelo médio
-    "B": "#b9b0a2",  # sombra
-    "K": "#2e2822",  # focinho e faixa do olho
-    "F": "#faf8f5",  # dentes
-    "W": "#ffffff",  # brilho do olho
-    "R": "#c4514c",  # boca
-    "A": "#3d4670",  # ponta da orelha
+    "P": "#a970ff",  # corpo, luz
+    "M": "#7b3fe4",  # corpo, meio-tom
+    "D": "#4d2196",  # sombra
+    "W": "#ffffff",  # olho
+    "K": "#1a1030",  # pupila e boca
+    "C": "#5ff0d8",  # ponta das antenas
 }
 
 #: 10 linhas de pixels x 12 colunas ("." = transparente).
 WOLF_PIXELS: Tuple[str, ...] = (
-    "............",
-    ".....B..B...",
-    ".....DEED...",
-    ".....EDEEEB.",
-    "....EBKDEEB.",
-    "KFFFEEEEEEBB",
-    "KKKWKDDDEDBB",
-    "KBBDDDDDDDB.",
-    ".DDDDDDDBBB.",
-    ".......BBB..",
+    "..C......C..",
+    "...P....M...",
+    "..PPPPMMMM..",
+    ".PWWPMMMWWM.",
+    ".PWKMMMMKWM.",
+    ".PMMMMMMMMD.",
+    "PMMKKKKKKDDD",
+    "MM.MMMMMD.DD",
+    ".MMM.MM.DDD.",
+    "M..M....D..D",
 )
 
 #: Largura fixa da arte, em colunas.
@@ -58,7 +58,7 @@ _LOWER_HALF = "▄"
 
 
 def wolf_art() -> Text:
-    """Desenha o lobinho compacto estático com meio-blocos coloridos."""
+    """Desenha o invasor compacto estático com meio-blocos coloridos."""
     art = Text()
     for row in range(0, len(WOLF_PIXELS), 2):
         top = WOLF_PIXELS[row]
