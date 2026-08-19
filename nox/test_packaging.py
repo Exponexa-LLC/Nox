@@ -353,6 +353,106 @@ async def test_version_check_concorda():
     assert version_check.normalize_tag("v" + __version__) == __version__
 
 
+def _version_check():
+    """Importa o guarda de versão sem deixar `packaging/` no sys.path."""
+    sys.path.insert(0, os.path.join(PROJECT_ROOT, "packaging"))
+    try:
+        import version_check
+        return version_check
+    finally:
+        sys.path.pop(0)
+
+
+class Ambiente_CI(object):
+    """Finge as variáveis que o GitHub Actions injeta, e desfaz no fim."""
+
+    VARS = ("GITHUB_REF_TYPE", "GITHUB_REF_NAME")
+
+    def __init__(self, ref_type="", ref_name=""):
+        self._antes = {nome: os.environ.get(nome) for nome in self.VARS}
+        for nome, valor in (("GITHUB_REF_TYPE", ref_type),
+                            ("GITHUB_REF_NAME", ref_name)):
+            if valor:
+                os.environ[nome] = valor
+            else:
+                os.environ.pop(nome, None)
+
+    def close(self):
+        for nome, valor in self._antes.items():
+            if valor is None:
+                os.environ.pop(nome, None)
+            else:
+                os.environ[nome] = valor
+
+
+def _rodar_main(modulo, argv):
+    """Chama `main` capturando a saída; devolve (código, texto)."""
+    saida = io.StringIO()
+    antes, sys.stdout = sys.stdout, saida
+    try:
+        codigo = modulo.main(argv)
+    except SystemExit as parada:
+        codigo = parada.code if isinstance(parada.code, int) else 1
+        saida.write(str(parada.code or ""))
+    finally:
+        sys.stdout = antes
+    return codigo, saida.getvalue()
+
+
+async def test_version_check_em_run_de_branch():
+    """Regressão: num run de branch, GITHUB_REF_NAME=main não é uma tag.
+
+    A reserva por ambiente derrubava o build inteiro tentando validar "main"
+    como semver. Sem argumento, aqui, a conferência é só pacote × pyproject.
+    """
+    modulo = _version_check()
+    ambiente = Ambiente_CI(ref_type="branch", ref_name="main")
+    try:
+        codigo, texto = _rodar_main(modulo, [])
+        assert codigo == 0, texto
+        assert __version__ in texto, texto
+        assert "tag" not in texto.lower(), texto
+    finally:
+        ambiente.close()
+
+
+async def test_version_check_em_run_de_tag():
+    modulo = _version_check()
+    ambiente = Ambiente_CI(ref_type="tag", ref_name="v" + __version__)
+    try:
+        codigo, texto = _rodar_main(modulo, [])
+        assert codigo == 0, texto
+        assert "tag v" + __version__ in texto, texto
+    finally:
+        ambiente.close()
+
+
+async def test_version_check_em_run_de_tag_divergente():
+    modulo = _version_check()
+    ambiente = Ambiente_CI(ref_type="tag", ref_name="v9.9.9")
+    try:
+        codigo, texto = _rodar_main(modulo, [])
+        assert codigo != 0, "tag divergente tem de falhar"
+        assert "divergência" in texto or "diverg" in texto, texto
+    finally:
+        ambiente.close()
+
+
+async def test_version_check_com_tag_explicita():
+    """Argumento vence o ambiente, em qualquer tipo de run."""
+    modulo = _version_check()
+    ambiente = Ambiente_CI(ref_type="branch", ref_name="main")
+    try:
+        codigo, texto = _rodar_main(modulo, ["v" + __version__])
+        assert codigo == 0, texto
+        assert "tag v" + __version__ in texto, texto
+        codigo, texto = _rodar_main(modulo, ["nao-e-semver"])
+        assert codigo != 0, "tag inválida tem de falhar"
+        assert "semver" in texto, texto
+    finally:
+        ambiente.close()
+
+
 async def test_version_check_recusa_divergencia():
     sys.path.insert(0, os.path.join(PROJECT_ROOT, "packaging"))
     try:
@@ -390,6 +490,10 @@ TESTS = [
     test_setup_render_e_codigo_de_saida,
     test_spec_existe_e_e_onedir,
     test_version_check_concorda,
+    test_version_check_em_run_de_branch,
+    test_version_check_em_run_de_tag,
+    test_version_check_em_run_de_tag_divergente,
+    test_version_check_com_tag_explicita,
     test_version_check_recusa_divergencia,
 ]
 

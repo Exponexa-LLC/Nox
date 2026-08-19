@@ -88,7 +88,13 @@ def main(argv=None) -> int:
         print(package_version())
         return 0
 
-    tag = argumentos[0] if argumentos else os.environ.get("GITHUB_REF_NAME", "")
+    # `GITHUB_REF_NAME` está SEMPRE definido no GitHub Actions: num run de
+    # branch ele vale "main", e usá-lo como reserva fazia a conferência tentar
+    # validar "main" como semver e derrubar o build. Só vale quando a ref é
+    # mesmo uma tag.
+    ref_type = os.environ.get("GITHUB_REF_TYPE", "")
+    padrao = os.environ.get("GITHUB_REF_NAME", "") if ref_type == "tag" else ""
+    tag = argumentos[0] if argumentos else padrao
     pacote, _projeto = check(tag or None)
     print("versão conferida: {0}{1}".format(
         pacote, " (tag {0})".format(tag) if tag else ""))
