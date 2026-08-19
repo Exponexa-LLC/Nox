@@ -31,7 +31,15 @@ SIZE = (80, 24)
 
 
 class Ambiente(object):
-    """Pasta temporária com chave falsa, known_hosts e hosts.json."""
+    """Pasta temporária com chave falsa, known_hosts e hosts.json.
+
+    O `known_hosts` daqui é injetado em `remote_hosts.known_hosts_path` durante
+    a vida do ambiente. Sem isso, o caminho que a TUI usa
+    (`_prepare_remote` → `remote_ssh.build_command`, sem passar `known_hosts`)
+    cairia no `~/.ssh/known_hosts` REAL de quem roda os testes: aqui passava
+    por existir, e num runner limpo falhava. A suíte precisa ser hermética —
+    o `~/.ssh` do usuário nunca é lido, copiado nem alterado.
+    """
 
     def __init__(self, hosts=None):
         self.raiz = tempfile.mkdtemp(prefix="nox-remote-")
@@ -47,6 +55,11 @@ class Ambiente(object):
         self.config_path = os.path.join(self.raiz, "config.json")
         self.log_path = os.path.join(self.raiz, "remote.log")
         self.write_hosts(hosts if hosts is not None else self.default_hosts())
+        # o patch é a ÚLTIMA coisa do setup, e de propósito: nada que possa
+        # falhar vem depois dele, então um setup quebrado nunca deixa o
+        # known_hosts substituído para trás. `close()` devolve o original.
+        self._known_hosts_original = remote_hosts.known_hosts_path
+        remote_hosts.known_hosts_path = lambda: self.known_hosts
 
     def default_hosts(self):
         return [
@@ -66,7 +79,14 @@ class Ambiente(object):
         return remote_hosts.find(carregados, alias)
 
     def close(self):
-        shutil.rmtree(self.raiz, ignore_errors=True)
+        """Restaura o known_hosts original SEMPRE, mesmo se o teste falhar."""
+        try:
+            original = getattr(self, "_known_hosts_original", None)
+            if original is not None:
+                remote_hosts.known_hosts_path = original
+                self._known_hosts_original = None
+        finally:
+            shutil.rmtree(self.raiz, ignore_errors=True)
 
 
 def ssh_runner(exit_code=0, stdout="ok", stderr=""):
