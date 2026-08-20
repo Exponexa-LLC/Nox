@@ -4,10 +4,32 @@ Todas as mudanças relevantes deste projeto. O formato segue
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões
 seguem [SemVer](https://semver.org/lang/pt-BR/).
 
-## [Não publicado]
+## [0.7.1] — correções de instalação no Windows
+
+Release de manutenção: nenhuma funcionalidade nova, nenhuma mudança de
+comportamento pedida. Só o que impedia a instalação de funcionar numa
+máquina Windows comum.
 
 ### Corrigido
 
+- **O instalador recusava o próprio Windows.** `$IsWindows` só existe no
+  PowerShell 6+; no Windows PowerShell 5.1 a variável é `$null`, e um
+  `-not $IsWindows` dava verdadeiro — o script anunciava "Linux/macOS" e
+  saía com 1 numa máquina Windows. A detecção passa a consultar a variável
+  quando ela existe e, na falta dela, `$env:OS` e
+  `[Environment]::OSVersion.Platform`. A arquitetura ganhou a mesma
+  reserva.
+- **`install.ps1` era UTF-8 sem BOM**, e o 5.1 lê `.ps1` sem BOM como ANSI:
+  os acentos viravam bytes soltos e o script morria com erro de sintaxe
+  antes de qualquer verificação. O arquivo passa a ser ASCII puro — o
+  único formato que funciona em toda combinação de leitura de arquivo,
+  `irm | iex` e página de código de console. O texto perde acentos e ganha
+  instalação.
+- **Acentos quebrados na saída da CLI** (`versÆo`, `nÆo`, `compat¡vel`):
+  o console responde CP 850, o Python emite na página ANSI quando a saída
+  vai para um pipe, e quem lê decodifica numa terceira. A saída passa a ser
+  UTF-8 com o console avisado disso, e o código de página anterior é
+  restaurado ao final.
 - Saída da CLI em cp1252 deixava de ser decodificada quando o Python rodava em
   modo UTF-8 (`-X utf8` / `PYTHONUTF8=1`): o acento virava caractere de
   substituição. `mbcs` entrou como último recurso no Windows.
@@ -76,4 +98,5 @@ código; agora existe um executável para Windows x64 que dispensa Python.
   exercitável a partir desta release; até aqui só foi testado contra origem
   local.
 
+[0.7.1]: https://github.com/Exponexa-LLC/Nox/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Exponexa-LLC/Nox/releases/tag/v0.7.0
