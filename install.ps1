@@ -61,6 +61,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# O Windows PowerShell 5.1 pode negociar TLS 1.0 por padrão, e o GitHub recusa
+# a conexão. Acrescentamos TLS 1.2 (e 1.3, quando o .NET desta máquina o
+# conhece) ao que já está configurado, sem remover nada. No PowerShell 7 isto
+# é inofensivo: ele já negocia versões modernas.
+try {
+    $protocolos = [Net.ServicePointManager]::SecurityProtocol
+    foreach ($nome in @("Tls12", "Tls13")) {
+        if ([enum]::GetNames([Net.SecurityProtocolType]) -contains $nome) {
+            $protocolos = $protocolos -bor [Net.SecurityProtocolType]::$nome
+        }
+    }
+    [Net.ServicePointManager]::SecurityProtocol = $protocolos
+} catch {
+    # ambiente sem ServicePointManager: seguimos com o padrão do host
+}
+
 # ---------------------------------------------------------------- constantes
 
 $RepoOwner = "Exponexa-LLC"
@@ -155,7 +171,16 @@ function Get-Arquivo([string]$origem, [string]$destino) {
         offline e para espelhos internos — a lógica de verificação é a
         mesma nos dois casos. #>
     if ($origem -match '^https?://') {
-        Invoke-WebRequest -Uri $origem -OutFile $destino -UseBasicParsing -TimeoutSec 120
+        # A barra de progresso do Invoke-WebRequest custa caro: com ela ligada,
+        # baixar 15 MB pode levar minutos no Windows PowerShell. Silenciar é
+        # local a esta função — o valor anterior volta no finally.
+        $progressoAntes = $ProgressPreference
+        $ProgressPreference = "SilentlyContinue"
+        try {
+            Invoke-WebRequest -Uri $origem -OutFile $destino -UseBasicParsing -TimeoutSec 120
+        } finally {
+            $ProgressPreference = $progressoAntes
+        }
     } else {
         $local = [System.IO.Path]::GetFullPath($origem)
         if (-not (Test-Path $local)) { Stop-Com "não encontrei: $local" }

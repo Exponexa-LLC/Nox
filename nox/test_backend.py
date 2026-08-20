@@ -199,6 +199,42 @@ async def test_decode_candidatos_comecam_por_utf8():
     assert len(candidatos) == len(set(c.lower() for c in candidatos))
 
 
+async def test_decode_candidatos_incluem_mbcs_no_windows():
+    """No Windows, `mbcs` é a rede de segurança contra o modo UTF-8."""
+    candidatos = backends._decode_candidates()
+    if sys.platform == "win32":
+        assert "mbcs" in candidatos, candidatos
+        assert candidatos.index("mbcs") == len(candidatos) - 1, \
+            "mbcs é o ÚLTIMO recurso, depois do locale"
+    else:
+        assert "mbcs" not in candidatos, candidatos
+
+
+async def test_decode_cp1252_sobrevive_ao_modo_utf8():
+    """Regressão: sob `-X utf8` o cp1252 caía no replace e perdia o acento.
+
+    O modo UTF-8 é simulado dentro do processo — `getpreferredencoding` passa
+    a devolver "UTF-8", que é exatamente o que a flag provoca. Sem `mbcs` na
+    lista, este teste falha: é essa a fragilidade que ele tranca.
+    """
+    import locale as modulo_locale
+
+    original = modulo_locale.getpreferredencoding
+    modulo_locale.getpreferredencoding = lambda do_setlocale=True: "UTF-8"
+    try:
+        candidatos = backends._decode_candidates()
+        assert "cp1252" not in [c.lower() for c in candidatos], candidatos
+        texto = "configuração não iniciada"
+        decodificado = backends._decode(texto.encode("cp1252"))
+        if sys.platform == "win32":
+            assert decodificado == texto, repr(decodificado)
+        else:
+            # fora do Windows não há página ANSI: o replace é o comportamento
+            assert isinstance(decodificado, str)
+    finally:
+        modulo_locale.getpreferredencoding = original
+
+
 # ------------------------------------------- modelo do resultado (N-13)
 
 
@@ -277,6 +313,8 @@ TESTS = [
     test_decode_bytes_invalidos_nao_levanta,
     test_decode_nao_bytes,
     test_decode_candidatos_comecam_por_utf8,
+    test_decode_candidatos_incluem_mbcs_no_windows,
+    test_decode_cp1252_sobrevive_ao_modo_utf8,
     test_model_name_um_modelo,
     test_model_name_escolhe_o_de_maior_uso,
     test_model_name_empate_e_deterministico,

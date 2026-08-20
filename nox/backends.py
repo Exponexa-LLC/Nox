@@ -593,9 +593,20 @@ def _decode(raw: object) -> str:
 
 
 def _decode_candidates() -> List[str]:
-    """UTF-8 primeiro; depois o encoding do console/locale, sem repetir."""
+    """UTF-8 primeiro; depois o encoding do console/locale, sem repetir.
+
+    No Windows, `mbcs` entra por último — antes só do `replace`. Ele resolve a
+    página ANSI real do sistema **independente do modo UTF-8 do Python**: sob
+    `-X utf8` (ou `PYTHONUTF8=1`), `getpreferredencoding` passa a devolver
+    "UTF-8", e bytes em cp1252 vindos de um console legado cairiam no
+    `replace`, virando acento quebrado. Fora do Windows o codec não existe, e o
+    `LookupError` já é tratado por quem itera esta lista.
+    """
     candidatos = ["utf-8"]
-    for nome in (locale.getpreferredencoding(False), sys.getfilesystemencoding()):
+    extras = [locale.getpreferredencoding(False), sys.getfilesystemencoding()]
+    if sys.platform == "win32":
+        extras.append("mbcs")
+    for nome in extras:
         if nome and nome.lower().replace("-", "") not in (
                 c.lower().replace("-", "") for c in candidatos):
             candidatos.append(nome)

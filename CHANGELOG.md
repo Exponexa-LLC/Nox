@@ -4,6 +4,19 @@ Todas as mudanças relevantes deste projeto. O formato segue
 [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e as versões
 seguem [SemVer](https://semver.org/lang/pt-BR/).
 
+## [Não publicado]
+
+### Corrigido
+
+- Saída da CLI em cp1252 deixava de ser decodificada quando o Python rodava em
+  modo UTF-8 (`-X utf8` / `PYTHONUTF8=1`): o acento virava caractere de
+  substituição. `mbcs` entrou como último recurso no Windows.
+- O download do instalador silencia a barra de progresso do
+  `Invoke-WebRequest` — com ela ligada, 15 MB podiam levar minutos — e
+  restaura a preferência anterior.
+- O instalador acrescenta TLS 1.2+ ao que o host já negocia, para o Windows
+  PowerShell 5.1 não tentar TLS 1.0 contra o GitHub.
+
 ## [0.7.0] — primeira distribuição
 
 Primeira versão instalável. Antes disto o Exponexa só rodava a partir do

@@ -214,6 +214,40 @@ async def test_sem_telemetria_e_sem_credencial():
                 or "claude.com" in url), url
 
 
+async def test_download_silencia_a_barra_de_progresso():
+    """Regressão de desempenho: com a barra ligada, 15 MB levam minutos.
+
+    Também exige que o valor anterior seja restaurado — mexer numa preferência
+    global do host e não devolver seria efeito colateral em quem chamou.
+    """
+    codigo = "\n".join(linhas_executaveis())
+    assert "ProgressPreference" in codigo, "o download precisa silenciar o progresso"
+    assert '$ProgressPreference = "SilentlyContinue"' in codigo, codigo
+    assert "$ProgressPreference = $progressoAntes" in codigo, \
+        "a preferência anterior tem de ser restaurada"
+    # A restauração vive num finally, para valer mesmo se o download falhar.
+    # A âncora é a ATRIBUIÇÃO: `-ErrorAction SilentlyContinue` aparece antes,
+    # em outras funções, e ancorar na string solta pegaria o trecho errado.
+    marca = '$ProgressPreference = "SilentlyContinue"'
+    trecho = codigo[codigo.index(marca):]
+    assert "finally" in trecho[:400], "a restauração precisa estar em finally"
+
+
+async def test_tls_moderno_e_acrescentado_sem_remover():
+    """TLS 1.2+ é acrescentado ao que já existe, nunca substituído.
+
+    Trocar `SecurityProtocol` por um valor fixo derrubaria protocolos que o
+    ambiente precise; por isso a checagem é pelo `-bor`.
+    """
+    codigo = "\n".join(linhas_executaveis())
+    assert "SecurityProtocol" in codigo, codigo
+    assert "Tls12" in codigo, codigo
+    assert "-bor" in codigo, "os protocolos são somados, não substituídos"
+    # e a falha ao ajustar não pode derrubar a instalação
+    inicio = codigo.index("SecurityProtocol")
+    assert "catch" in codigo[inicio:inicio + 600], "o ajuste de TLS precisa ser tolerante"
+
+
 async def test_verificacao_vem_antes_da_extracao():
     """A ordem importa mais que a existência: conferir depois não adianta."""
     texto = io.open(INSTALLER, encoding="utf-8").read()
@@ -452,6 +486,8 @@ TESTS = [
     test_nao_toca_na_configuracao_do_usuario,
     test_sem_telemetria_e_sem_credencial,
     test_verificacao_vem_antes_da_extracao,
+    test_download_silencia_a_barra_de_progresso,
+    test_tls_moderno_e_acrescentado_sem_remover,
     test_parametros_declarados,
     test_dry_run_nao_escreve_nada,
     test_instalacao_completa,
