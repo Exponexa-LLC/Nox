@@ -214,6 +214,100 @@ async def test_sem_telemetria_e_sem_credencial():
                 or "claude.com" in url), url
 
 
+async def test_download_silencia_a_barra_de_progresso():
+    """Regressão de desempenho: com a barra ligada, 15 MB levam minutos.
+
+    Também exige que o valor anterior seja restaurado — mexer numa preferência
+    global do host e não devolver seria efeito colateral em quem chamou.
+    """
+    codigo = "\n".join(linhas_executaveis())
+    assert "ProgressPreference" in codigo, "o download precisa silenciar o progresso"
+    assert '$ProgressPreference = "SilentlyContinue"' in codigo, codigo
+    assert "$ProgressPreference = $progressoAntes" in codigo, \
+        "a preferência anterior tem de ser restaurada"
+    # A restauração vive num finally, para valer mesmo se o download falhar.
+    # A âncora é a ATRIBUIÇÃO: `-ErrorAction SilentlyContinue` aparece antes,
+    # em outras funções, e ancorar na string solta pegaria o trecho errado.
+    marca = '$ProgressPreference = "SilentlyContinue"'
+    trecho = codigo[codigo.index(marca):]
+    assert "finally" in trecho[:400], "a restauração precisa estar em finally"
+
+
+async def test_tls_moderno_e_acrescentado_sem_remover():
+    """TLS 1.2+ é acrescentado ao que já existe, nunca substituído.
+
+    Trocar `SecurityProtocol` por um valor fixo derrubaria protocolos que o
+    ambiente precise; por isso a checagem é pelo `-bor`.
+    """
+    codigo = "\n".join(linhas_executaveis())
+    assert "SecurityProtocol" in codigo, codigo
+    assert "Tls12" in codigo, codigo
+    assert "-bor" in codigo, "os protocolos são somados, não substituídos"
+    # e a falha ao ajustar não pode derrubar a instalação
+    inicio = codigo.index("SecurityProtocol")
+    assert "catch" in codigo[inicio:inicio + 600], "o ajuste de TLS precisa ser tolerante"
+
+
+async def test_instalador_e_ascii_puro():
+    """Regressão do bug que impedia a instalação no Windows PowerShell 5.1.
+
+    O 5.1 lê `.ps1` sem BOM como ANSI. Com acentos em UTF-8, o arquivo nem
+    era interpretado: o em-dash virava três bytes e quebrava o fechamento de
+    string, e o instalador morria com erro de sintaxe antes de qualquer
+    verificação. ASCII puro funciona em toda combinação de leitura de arquivo,
+    decodificação do `irm` e codepage de console.
+    """
+    bruto = open(INSTALLER, "rb").read()
+    problemas = [(i, b) for i, b in enumerate(bruto) if b > 127]
+    assert not problemas, "bytes não-ASCII em {0}: {1}".format(
+        INSTALLER, problemas[:5])
+
+
+async def test_deteccao_de_plataforma_nao_depende_de_IsWindows():
+    """Regressão: `$IsWindows` não existe no 5.1, e `-not $null` é verdadeiro.
+
+    O instalador acusava Linux/macOS numa máquina Windows e saía com 1. A
+    detecção precisa ter alternativa para o host que não define a variável.
+    """
+    codigo = "\n".join(linhas_executaveis())
+    assert "Test-EhWindows" in codigo, "falta a função de detecção"
+    # nenhum uso NU de $IsWindows: sempre protegido por Test-Path variable:
+    for linha in linhas_executaveis():
+        if "$IsWindows" in linha:
+            assert "Test-Path variable:IsWindows" in linha or "[bool]$IsWindows" in linha, \
+                "uso desprotegido de $IsWindows: " + linha
+    for reserva in ("Windows_NT", "OSVersion.Platform"):
+        assert reserva in codigo, "falta a reserva " + reserva
+    # arquitetura idem: RuntimeInformation com plano B
+    assert "Is64BitOperatingSystem" in codigo or "PROCESSOR_ARCHITECTURE" in codigo
+
+
+async def test_powershell_5_1_reconhece_windows_x64():
+    """Roda no PowerShell 5.1 de verdade, quando ele existe nesta máquina."""
+    import subprocess
+
+    legado = shutil.which("powershell")
+    if not legado or "WindowsPowerShell" not in legado:
+        return  # sem 5.1 instalado: os demais testes já cobrem o 7
+
+    ambiente = ReleaseFalsa()
+    try:
+        script = (
+            "& '{0}' -Version {1} -Prefix '{2}' -Source '{3}' -DryRun"
+        ).format(INSTALLER, ambiente.versao, ambiente.prefixo, ambiente.raiz)
+        processo = subprocess.run(
+            [legado, "-NoProfile", "-NonInteractive", "-Command", script],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
+        saida = processo.stdout.decode("utf-8", "replace")
+        assert processo.returncode == 0, saida
+        assert "windows-x64" in saida, saida
+        assert "Linux/macOS" not in saida, "recusou o Windows: " + saida
+        assert "nada foi baixado" in saida, saida
+        assert not os.path.exists(ambiente.versao_dir()), "-DryRun escreveu"
+    finally:
+        ambiente.close()
+
+
 async def test_verificacao_vem_antes_da_extracao():
     """A ordem importa mais que a existência: conferir depois não adianta."""
     texto = io.open(INSTALLER, encoding="utf-8").read()
@@ -452,6 +546,11 @@ TESTS = [
     test_nao_toca_na_configuracao_do_usuario,
     test_sem_telemetria_e_sem_credencial,
     test_verificacao_vem_antes_da_extracao,
+    test_instalador_e_ascii_puro,
+    test_deteccao_de_plataforma_nao_depende_de_IsWindows,
+    test_powershell_5_1_reconhece_windows_x64,
+    test_download_silencia_a_barra_de_progresso,
+    test_tls_moderno_e_acrescentado_sem_remover,
     test_parametros_declarados,
     test_dry_run_nao_escreve_nada,
     test_instalacao_completa,

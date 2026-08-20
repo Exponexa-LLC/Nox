@@ -32,9 +32,9 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -54,9 +54,9 @@ jobs:
         shell: pwsh
         run: |
           $suites = @(
-            "test_packaging", "test_policy", "test_resilience", "test_remote",
-            "test_identity", "test_models", "test_backend", "test_layout",
-            "test_copy", "test_autocomplete", "test_pickers"
+            "test_installers", "test_packaging", "test_policy", "test_resilience",
+            "test_remote", "test_identity", "test_models", "test_backend",
+            "test_layout", "test_copy", "test_autocomplete", "test_pickers"
           )
           $falhas = 0
           foreach ($s in $suites) {
@@ -139,7 +139,7 @@ jobs:
           Write-Host "checksum confere: $nome"
 
       - name: publicar como artefato do run (não é release)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nox-windows-x64
           path: |

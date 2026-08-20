@@ -50,9 +50,10 @@ Sem a CLI, a interface abre e explica o que falta, em vez de quebrar.
 irm https://raw.githubusercontent.com/Exponexa-LLC/Nox/main/install.ps1 | iex
 ```
 
-O instalador baixa a release, **confere o SHA-256 antes de extrair qualquer
-coisa** e instala em `%LOCALAPPDATA%\Programs\Exponexa`. Não pede
-administrador, não grava credencial e não envia telemetria.
+Sem argumento, o instalador resolve a **última release publicada**, baixa,
+**confere o SHA-256 antes de extrair qualquer coisa** e instala em
+`%LOCALAPPDATA%\Programs\Exponexa`. Não pede administrador, não grava
+credencial e não envia telemetria.
 
 Para passar opções, o `iex` não serve — use:
 
@@ -62,7 +63,7 @@ Para passar opções, o `iex` não serve — use:
 
 | Opção | O que faz |
 |---|---|
-| `-Version 0.7.0` | fixa a versão; usar uma já instalada volta para ela sem baixar nada |
+| `-Version 0.7.0` | fixa uma versão em vez da última; se ela já estiver instalada, volta para ela **sem baixar nada** (é assim que se faz rollback) |
 | `-AddToPath` | acrescenta o comando ao PATH do **usuário** (sem isso, o script só mostra a linha a colar) |
 | `-DryRun` | mostra o plano e não escreve nada |
 | `-ListVersions` | lista o que está instalado e qual está ativa |
@@ -76,7 +77,7 @@ Baixe os arquivos da [release](https://github.com/Exponexa-LLC/Nox/releases),
 confira o hash você mesmo e extraia onde quiser:
 
 ```powershell
-$v = "0.7.0"
+$v = "0.7.0"          # troque pela versão desejada
 $zip = "nox-$v-windows-x64.zip"
 irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/$zip" -OutFile $zip
 irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/SHA256SUMS" -OutFile SHA256SUMS

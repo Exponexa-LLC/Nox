@@ -59,6 +59,54 @@ def resource_path(name: str, module_file: Optional[str] = None) -> str:
     return os.path.join(base, name)
 
 
+def configure_console():
+    """Alinha a saída do processo com o console, no Windows.
+
+    O problema real: o console desta máquina responde CP850, mas o Python usa
+    a página ANSI (cp1252) quando a saída é capturada por um pipe. Quem lê
+    depois — PowerShell, terminal, arquivo — decodifica com uma terceira
+    página, e "não" chega como "nÆo".
+
+    A saída passa a ser UTF-8 e o console é avisado disso (CP 65001), de modo
+    que emissor e leitor concordem. Vale para o Windows PowerShell 5.1, o
+    PowerShell 7 e o executável congelado.
+
+    Não mexe em código de saída, não engole exceção de ninguém e devolve uma
+    função que restaura o codepage anterior — a alteração é da sessão de
+    console, e devolvê-la é responsabilidade nossa.
+    """
+    if sys.platform != "win32":
+        return lambda: None
+
+    desfazer = []
+    try:
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        anterior = kernel32.GetConsoleOutputCP()
+        if anterior and anterior != 65001 and kernel32.SetConsoleOutputCP(65001):
+            desfazer.append(lambda: kernel32.SetConsoleOutputCP(anterior))
+    except Exception:
+        pass  # sem console (serviço, pipe puro): seguimos só com o reconfigure
+
+    for fluxo in (sys.stdout, sys.stderr):
+        try:
+            # `errors="replace"` para um caractere exótico nunca derrubar um
+            # diagnóstico — perder um glifo é melhor que perder a mensagem.
+            fluxo.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+    def restaurar():
+        for acao in desfazer:
+            try:
+                acao()
+            except Exception:
+                pass
+
+    return restaurar
+
+
 def clean_env(env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """Ambiente sem os rastros do bundle, para entregar a um processo-filho.
 

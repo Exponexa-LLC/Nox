@@ -171,6 +171,44 @@ async def test_ssh_nao_vaza_variaveis_do_bundle():
 # ------------------------------------------------------- dispatcher
 
 
+async def test_configure_console_devolve_restaurador():
+    """O alinhamento de console é reversível — a sessão não fica alterada."""
+    restaurar = frozen.configure_console()
+    assert callable(restaurar), restaurar
+    restaurar()  # não pode levantar, mesmo chamado duas vezes
+    restaurar()
+
+
+async def test_configure_console_fora_do_windows_e_inocuo():
+    plataforma = sys.platform
+    try:
+        sys.platform = "linux"
+        antes = (sys.stdout, sys.stderr)
+        restaurar = frozen.configure_console()
+        assert (sys.stdout, sys.stderr) == antes, "mexeu nos fluxos fora do Windows"
+        restaurar()
+    finally:
+        sys.platform = plataforma
+
+
+async def test_main_restaura_o_console_mesmo_com_erro():
+    """Regressão: o código de saída não pode ser engolido pelo alinhamento."""
+    chamadas = []
+    original = frozen.configure_console
+    frozen.configure_console = lambda: (lambda: chamadas.append("restaurou"))
+    try:
+        saida = io.StringIO()
+        antes, sys.stdout = sys.stdout, saida
+        try:
+            codigo = principal.main(["xyz-inexistente"])
+        finally:
+            sys.stdout = antes
+        assert codigo == 2, codigo          # o código do comando, intacto
+        assert chamadas == ["restaurou"], chamadas
+    finally:
+        frozen.configure_console = original
+
+
 async def test_parse_command():
     casos = [
         ([], "tui"),
@@ -494,6 +532,9 @@ TESTS = [
     test_backend_nao_vaza_variaveis_do_bundle,
     test_ssh_nao_vaza_variaveis_do_bundle,
     test_parse_command,
+    test_configure_console_devolve_restaurador,
+    test_configure_console_fora_do_windows_e_inocuo,
+    test_main_restaura_o_console_mesmo_com_erro,
     test_version_imprime_a_versao,
     test_help_e_comando_desconhecido,
     test_dispatcher_chamado_uma_unica_vez,
