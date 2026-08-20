@@ -44,9 +44,58 @@ chamadas, e não existe caminho no código para o modelo disparar uma ação.
 
 Sem a CLI, a interface abre e explica o que falta, em vez de quebrar.
 
-## Instalação
+## Instalação — Windows x64
 
-Hoje o projeto roda a partir do checkout:
+```powershell
+irm https://raw.githubusercontent.com/Exponexa-LLC/Nox/main/install.ps1 | iex
+```
+
+O instalador baixa a release, **confere o SHA-256 antes de extrair qualquer
+coisa** e instala em `%LOCALAPPDATA%\Programs\Exponexa`. Não pede
+administrador, não grava credencial e não envia telemetria.
+
+Para passar opções, o `iex` não serve — use:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/Exponexa-LLC/Nox/main/install.ps1))) -AddToPath
+```
+
+| Opção | O que faz |
+|---|---|
+| `-Version 0.7.0` | fixa a versão; usar uma já instalada volta para ela sem baixar nada |
+| `-AddToPath` | acrescenta o comando ao PATH do **usuário** (sem isso, o script só mostra a linha a colar) |
+| `-DryRun` | mostra o plano e não escreve nada |
+| `-ListVersions` | lista o que está instalado e qual está ativa |
+| `-Uninstall` | remove versões, shim e a entrada de PATH — **sua configuração em `~/.nox` é preservada** |
+
+Também dá para usar `$env:NOX_VERSION` em vez de `-Version`.
+
+### Se preferir não confiar num script vindo da rede
+
+Baixe os arquivos da [release](https://github.com/Exponexa-LLC/Nox/releases),
+confira o hash você mesmo e extraia onde quiser:
+
+```powershell
+$v = "0.7.0"
+$zip = "nox-$v-windows-x64.zip"
+irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/$zip" -OutFile $zip
+irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/SHA256SUMS" -OutFile SHA256SUMS
+
+(Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()   # compare com a linha do arquivo
+Get-Content SHA256SUMS
+
+Expand-Archive $zip -DestinationPath .\nox
+.\nox\nox.exe setup
+```
+
+O `install.ps1` faz exatamente isso, e você pode lê-lo antes de executar — ele
+vive na raiz do repositório, comentado.
+
+**O executável não é assinado.** O SmartScreen vai avisar que o editor é
+desconhecido; é esperado, e a verificação de integridade que oferecemos é o
+SHA-256 acima.
+
+### A partir do código
 
 ```bash
 git clone https://github.com/Exponexa-LLC/Nox.git
@@ -59,8 +108,22 @@ python -m nox
 ```
 
 No Windows há também `nox.cmd` na raiz, que descobre o próprio diretório e
-funciona de qualquer pasta. Instaladores multiplataforma e publicação da
-distribuição (`exponexa-nox`) são a próxima etapa.
+funciona de qualquer pasta.
+
+### Linux e macOS
+
+Ainda **não há executável publicado** — use o caminho a partir do código
+acima, que funciona nos três sistemas. Os bundles entram quando tiverem build
+e testes verdes; nada é anunciado antes disso.
+
+### Primeiro uso
+
+```
+nox setup     # diagnóstico local: sistema, CLI do Claude, autenticação, perfil
+nox           # abre a interface
+```
+
+O `setup` não chama o modelo e não exibe credenciais.
 
 ## Perfis de política
 

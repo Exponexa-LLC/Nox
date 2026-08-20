@@ -16,6 +16,7 @@ import asyncio
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -399,6 +400,22 @@ def _rodar_main(modulo, argv):
     return codigo, saida.getvalue()
 
 
+async def test_versoes_em_paridade():
+    """As duas fontes de versão têm de dizer o mesmo, sempre.
+
+    `__init__.py` alimenta `nox --version` e `pyproject.toml` alimenta a
+    distribuição. Divergentes, o instalador baixaria uma versão e o binário se
+    apresentaria como outra — daí a checagem viver também aqui, e não só
+    dentro do guarda que roda no CI.
+    """
+    modulo = _version_check()
+    pacote = modulo.package_version()
+    projeto = modulo.pyproject_version()
+    assert pacote == projeto, (pacote, projeto)
+    assert pacote == __version__, (pacote, __version__)
+    assert re.match(r"^\d+\.\d+\.\d+$", pacote), pacote
+
+
 async def test_version_check_em_run_de_branch():
     """Regressão: num run de branch, GITHUB_REF_NAME=main não é uma tag.
 
@@ -490,6 +507,7 @@ TESTS = [
     test_setup_render_e_codigo_de_saida,
     test_spec_existe_e_e_onedir,
     test_version_check_concorda,
+    test_versoes_em_paridade,
     test_version_check_em_run_de_branch,
     test_version_check_em_run_de_tag,
     test_version_check_em_run_de_tag_divergente,

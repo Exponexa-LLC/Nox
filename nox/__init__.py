@@ -23,7 +23,7 @@ __all__ = [
     "__version__",
 ]
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 #: Nome técnico: pacote Python, pasta e módulo (`python -m nox`).
 APP_NAME = "nox"
