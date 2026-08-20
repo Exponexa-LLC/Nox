@@ -1327,9 +1327,23 @@ def parse_command(argv) -> Tuple[str, List[str]]:
 
 
 def main(argv=None) -> int:
-    """Ponto de entrada do comando `nox` e de `python -m nox`."""
-    comando, resto = parse_command(
-        sys.argv[1:] if argv is None else argv)
+    """Ponto de entrada do comando `nox` e de `python -m nox`.
+
+    O alinhamento de console acontece antes de qualquer `print` e e desfeito
+    no `finally`: sem ele, texto acentuado sai numa pagina de codigo e e lido
+    em outra ("nao" chega como "nAo"). Nenhum codigo de saida muda aqui - o
+    valor devolvido continua sendo o do comando.
+    """
+    restaurar_console = frozen.configure_console()
+    try:
+        return _executar(sys.argv[1:] if argv is None else argv)
+    finally:
+        restaurar_console()
+
+
+def _executar(argumentos) -> int:
+    """O roteamento em si, separado para o console ser sempre restaurado."""
+    comando, resto = parse_command(argumentos)
     if comando == "version":
         print("Exponexa (nox) {0}".format(__version__))
         return 0
