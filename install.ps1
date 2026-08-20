@@ -1,0 +1,400 @@
+<#
+.SYNOPSIS
+    Instalador do Exponexa (comando `nox`) para Windows x64.
+
+.DESCRIPTION
+    Baixa uma release oficial versionada de Exponexa-LLC/Nox, confere o
+    SHA-256 ANTES de extrair qualquer coisa e instala no diretório do
+    usuário. Não pede administrador, não grava credencial, não envia
+    telemetria e não toca na sua configuração.
+
+    O que este script NUNCA faz:
+      - ler, escrever ou apagar ~/.nox e ~/.delet_user (sua configuração é
+        sua; a limpeza desses diretórios fica para uma etapa futura, e hoje
+        não existe parâmetro que a execute);
+      - alterar o PATH da máquina (HKLM) ou exigir privilégio;
+      - extrair ou executar o download antes de o checksum conferir;
+      - autenticar você em qualquer serviço ou chamar o modelo.
+
+.PARAMETER Version
+    Versão a instalar, como 0.7.0. Sem ela, usa $env:NOX_VERSION; sem as
+    duas, consulta a última release publicada.
+
+.PARAMETER Prefix
+    Raiz da instalação. Padrão: %LOCALAPPDATA%\Programs\Exponexa
+
+.PARAMETER Source
+    Origem alternativa dos arquivos (URL ou pasta local). Serve para testes
+    offline e para instalar de um espelho interno.
+
+.PARAMETER DryRun
+    Mostra o plano e não escreve absolutamente nada.
+
+.PARAMETER AddToPath
+    Acrescenta o diretório do shim ao PATH do USUÁRIO. Sem este parâmetro, o
+    script pergunta (quando há terminal) ou apenas imprime a linha a colar.
+
+.PARAMETER Uninstall
+    Remove as versões instaladas, o shim e a entrada de PATH criada aqui.
+    Preserva toda a configuração do usuário.
+
+.PARAMETER ListVersions
+    Lista as versões instaladas e qual está ativa.
+
+.EXAMPLE
+    irm https://raw.githubusercontent.com/Exponexa-LLC/Nox/main/install.ps1 | iex
+
+.EXAMPLE
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/Exponexa-LLC/Nox/main/install.ps1))) -AddToPath
+#>
+
+[CmdletBinding()]
+param(
+    [string]$Version = "",
+    [string]$Prefix = "",
+    [string]$Source = "",
+    [switch]$DryRun,
+    [switch]$AddToPath,
+    [switch]$Uninstall,
+    [switch]$ListVersions
+)
+
+$ErrorActionPreference = "Stop"
+
+# ---------------------------------------------------------------- constantes
+
+$RepoOwner = "Exponexa-LLC"
+$RepoName = "Nox"
+$ReleasesApi = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
+$ReleasesDownload = "https://github.com/$RepoOwner/$RepoName/releases/download"
+$ChecksumFile = "SHA256SUMS"
+$ShimName = "nox.cmd"
+
+# ------------------------------------------------------------------ saída
+
+function Write-Passo([string]$texto) { Write-Host "  $texto" }
+function Write-Titulo([string]$texto) { Write-Host ""; Write-Host $texto }
+function Write-Aviso([string]$texto) { Write-Host "  ! $texto" -ForegroundColor Yellow }
+function Write-Erro([string]$texto) { Write-Host "  x $texto" -ForegroundColor Red }
+
+function Stop-Com([string]$mensagem) {
+    Write-Erro $mensagem
+    exit 1
+}
+
+# ------------------------------------------------------------- plataforma
+
+function Test-Plataforma {
+    <#  Só Windows x64 tem bundle publicado. Recusar com clareza é melhor
+        que instalar algo que não roda. #>
+    if (-not $IsWindows) {
+        Stop-Com ("este instalador é do bundle Windows. Em Linux/macOS ainda " +
+                  "não há executável publicado — use o pacote Python: " +
+                  "pip install textual && python -m nox")
+    }
+    $arq = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+    if ($arq -ne [System.Runtime.InteropServices.Architecture]::X64) {
+        Stop-Com ("arquitetura $arq não tem build publicado (só Windows x64). " +
+                  "Use o pacote Python enquanto isso.")
+    }
+    return "windows-x64"
+}
+
+# --------------------------------------------------------------- caminhos
+
+function Get-Prefixo([string]$informado) {
+    if ($informado) { return [System.IO.Path]::GetFullPath($informado) }
+    return Join-Path $env:LOCALAPPDATA "Programs\Exponexa"
+}
+
+function Get-DiretorioVersoes([string]$prefixo) { Join-Path $prefixo "nox" }
+function Get-DiretorioBin([string]$prefixo) { Join-Path $prefixo "bin" }
+function Get-CaminhoShim([string]$prefixo) { Join-Path (Get-DiretorioBin $prefixo) $ShimName }
+
+function Get-VersoesInstaladas([string]$prefixo) {
+    $raiz = Get-DiretorioVersoes $prefixo
+    if (-not (Test-Path $raiz)) { return @() }
+    return @(Get-ChildItem $raiz -Directory -ErrorAction SilentlyContinue |
+             Sort-Object Name | Select-Object -ExpandProperty Name)
+}
+
+function Get-VersaoAtiva([string]$prefixo) {
+    $shim = Get-CaminhoShim $prefixo
+    if (-not (Test-Path $shim)) { return "" }
+    $conteudo = Get-Content $shim -Raw
+    $achado = [regex]::Match($conteudo, [regex]::Escape((Get-DiretorioVersoes $prefixo)) + '\\([^\\"]+)\\nox\.exe')
+    if ($achado.Success) { return $achado.Groups[1].Value }
+    return ""
+}
+
+# ---------------------------------------------------------------- versão
+
+function Resolve-Versao([string]$informada) {
+    if ($informada) { return ($informada -replace '^v', '') }
+    if ($env:NOX_VERSION) { return ($env:NOX_VERSION -replace '^v', '') }
+    Write-Passo "consultando a última release publicada…"
+    try {
+        $resposta = Invoke-RestMethod -Uri "$ReleasesApi/latest" -Headers @{
+            "Accept" = "application/vnd.github+json"
+            "User-Agent" = "exponexa-nox-installer"
+        } -TimeoutSec 30
+    } catch {
+        Stop-Com ("não consegui consultar as releases ($($_.Exception.Message)). " +
+                  "Informe a versão: -Version 0.7.0  (ou `$env:NOX_VERSION)")
+    }
+    if (-not $resposta.tag_name) {
+        Stop-Com "a API não devolveu nenhuma release. Informe -Version explicitamente."
+    }
+    return ($resposta.tag_name -replace '^v', '')
+}
+
+# ------------------------------------------------------------- download
+
+function Get-Arquivo([string]$origem, [string]$destino) {
+    <#  Aceita URL ou caminho local. O caminho local existe para testes
+        offline e para espelhos internos — a lógica de verificação é a
+        mesma nos dois casos. #>
+    if ($origem -match '^https?://') {
+        Invoke-WebRequest -Uri $origem -OutFile $destino -UseBasicParsing -TimeoutSec 120
+    } else {
+        $local = [System.IO.Path]::GetFullPath($origem)
+        if (-not (Test-Path $local)) { Stop-Com "não encontrei: $local" }
+        Copy-Item $local $destino -Force
+    }
+}
+
+function Get-BaseOrigem([string]$source, [string]$versao) {
+    if ($source) { return $source.TrimEnd('/', '\') }
+    return "$ReleasesDownload/v$versao"
+}
+
+function Join-Origem([string]$base, [string]$nome) {
+    if ($base -match '^https?://') { return "$base/$nome" }
+    return (Join-Path $base $nome)
+}
+
+# ------------------------------------------------------------- checksum
+
+function Get-HashEsperado([string]$arquivoSums, [string]$nomeZip) {
+    <#  Formato do sha256sum: <hash><dois espaços><arquivo>. #>
+    foreach ($linha in Get-Content $arquivoSums) {
+        $limpo = $linha.Trim()
+        if (-not $limpo) { continue }
+        $partes = $limpo -split '\s+', 2
+        if ($partes.Count -lt 2) { continue }
+        if ($partes[1].Trim() -eq $nomeZip) { return $partes[0].ToLower() }
+    }
+    return ""
+}
+
+function Assert-Checksum([string]$zip, [string]$sums, [string]$nomeZip) {
+    $esperado = Get-HashEsperado $sums $nomeZip
+    if (-not $esperado) {
+        Stop-Com "não achei a linha de $nomeZip em $ChecksumFile — instalação abortada."
+    }
+    $obtido = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+    if ($obtido -ne $esperado) {
+        Write-Erro "o arquivo baixado NÃO confere com o checksum da release."
+        Write-Passo "esperado: $esperado"
+        Write-Passo "obtido:   $obtido"
+        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+        Stop-Com "nada foi extraído. Baixe de novo ou verifique a origem."
+    }
+    Write-Passo "checksum confere: $esperado"
+}
+
+# ------------------------------------------------------------------ shim
+
+function Write-Shim([string]$prefixo, [string]$versao) {
+    $bin = Get-DiretorioBin $prefixo
+    if (-not (Test-Path $bin)) { New-Item -ItemType Directory -Path $bin -Force | Out-Null }
+    $alvo = Join-Path (Join-Path (Get-DiretorioVersoes $prefixo) $versao) "nox.exe"
+    $conteudo = @"
+@echo off
+REM Shim do Exponexa — aponta para a versao ativa. Gerado por install.ps1.
+"$alvo" %*
+"@
+    Set-Content -Path (Get-CaminhoShim $prefixo) -Value $conteudo -Encoding ascii
+}
+
+# ------------------------------------------------------------------ PATH
+
+function Test-NoPath([string]$diretorio) {
+    $atual = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $atual) { return $false }
+    return ($atual -split ';' | Where-Object { $_.TrimEnd('\') -eq $diretorio.TrimEnd('\') }).Count -gt 0
+}
+
+function Add-AoPath([string]$diretorio) {
+    <#  Escopo USUÁRIO, sempre. Nunca Machine, nunca privilégio. #>
+    if (Test-NoPath $diretorio) {
+        Write-Passo "o PATH do usuário já contém $diretorio"
+        return
+    }
+    $atual = [Environment]::GetEnvironmentVariable("Path", "User")
+    $novo = if ($atual) { "$atual;$diretorio" } else { $diretorio }
+    [Environment]::SetEnvironmentVariable("Path", $novo, "User")
+    Write-Passo "PATH do usuário atualizado — reabra o terminal para valer."
+}
+
+function Remove-DoPath([string]$diretorio) {
+    $atual = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $atual) { return }
+    $restante = ($atual -split ';' | Where-Object {
+        $_ -and ($_.TrimEnd('\') -ne $diretorio.TrimEnd('\'))
+    }) -join ';'
+    if ($restante -ne $atual) {
+        [Environment]::SetEnvironmentVariable("Path", $restante, "User")
+        Write-Passo "entrada removida do PATH do usuário."
+    }
+}
+
+function Resolve-PermissaoPath([string]$diretorio) {
+    if ($AddToPath) { return $true }
+    if ($DryRun) { return $false }
+    # `[Environment]::UserInteractive` continua $true sob -NonInteractive e com
+    # a entrada redirecionada, então não dá para confiar nele: tentamos
+    # perguntar e, se o host recusar, seguimos SEM mexer no PATH. Nunca
+    # alteramos o PATH por falta de resposta — a omissão é o lado seguro.
+    Write-Host ""
+    try {
+        $resposta = Read-Host "  acrescentar $diretorio ao PATH do usuário? (s/N)"
+    } catch {
+        Write-Passo "(sem terminal interativo: o PATH fica como está)"
+        return $false
+    }
+    return ($resposta -match '^(s|sim|y|yes)$')
+}
+
+# ------------------------------------------------------------- diagnóstico
+
+function Show-DiagnosticoClaude {
+    <#  Só olha se a CLI existe. Não autentica, não chama o modelo, não lê
+        credencial nenhuma. #>
+    Write-Titulo "provedor"
+    $claude = Get-Command claude -ErrorAction SilentlyContinue
+    if ($claude) {
+        Write-Passo "CLI do Claude encontrada: $($claude.Source)"
+        Write-Passo "rode 'nox setup' para o diagnóstico completo."
+    } else {
+        Write-Aviso "a CLI do Claude não está no PATH."
+        Write-Passo "o Exponexa conversa através dela; instale a partir de"
+        Write-Passo "https://claude.com/claude-code e autentique-se com 'claude auth login'."
+        Write-Passo "a autenticação é sua e local — este instalador não pede,"
+        Write-Passo "não copia e não guarda credencial nenhuma."
+    }
+}
+
+# ------------------------------------------------------------------ ações
+
+function Invoke-ListVersions([string]$prefixo) {
+    $versoes = Get-VersoesInstaladas $prefixo
+    $ativa = Get-VersaoAtiva $prefixo
+    Write-Titulo "versões em $prefixo"
+    if (-not $versoes) { Write-Passo "(nenhuma instalada)"; return }
+    foreach ($v in $versoes) {
+        $marca = if ($v -eq $ativa) { "* " } else { "  " }
+        Write-Passo "$marca$v"
+    }
+    if ($ativa) { Write-Passo "" ; Write-Passo "ativa: $ativa" }
+}
+
+function Invoke-Uninstall([string]$prefixo) {
+    Write-Titulo "desinstalando o Exponexa"
+    $versoesDir = Get-DiretorioVersoes $prefixo
+    $bin = Get-DiretorioBin $prefixo
+    $shim = Get-CaminhoShim $prefixo
+
+    Write-Passo "remover: $versoesDir"
+    Write-Passo "remover: $shim"
+    Write-Passo "remover a entrada de PATH: $bin"
+    Write-Passo "PRESERVAR: sua configuração (nada em ~/.nox ou ~/.delet_user é tocado)"
+
+    if ($DryRun) { Write-Titulo "-DryRun: nada foi alterado."; return }
+
+    if (Test-Path $shim) { Remove-Item $shim -Force }
+    if (Test-Path $versoesDir) { Remove-Item $versoesDir -Recurse -Force }
+    Remove-DoPath $bin
+    if ((Test-Path $bin) -and -not (Get-ChildItem $bin -Force)) { Remove-Item $bin -Force }
+    if ((Test-Path $prefixo) -and -not (Get-ChildItem $prefixo -Force)) { Remove-Item $prefixo -Force }
+    Write-Titulo "desinstalado. Sua configuração continua onde estava."
+}
+
+function Invoke-Install([string]$prefixo, [string]$versao, [string]$source) {
+    $plataforma = Test-Plataforma
+    $nomeZip = "nox-$versao-$plataforma.zip"
+    $destinoVersao = Join-Path (Get-DiretorioVersoes $prefixo) $versao
+    $bin = Get-DiretorioBin $prefixo
+
+    Write-Titulo "Exponexa $versao ($plataforma)"
+    Write-Passo "instalar em: $destinoVersao"
+    Write-Passo "shim:        $(Get-CaminhoShim $prefixo)"
+
+    # versão já presente: rollback/troca é só reapontar o shim
+    if ((Test-Path $destinoVersao) -and (Get-ChildItem $destinoVersao -Force -ErrorAction SilentlyContinue)) {
+        Write-Passo "esta versão já está instalada — reapontando o shim (sem baixar nada)."
+        if ($DryRun) { Write-Titulo "-DryRun: nada foi alterado."; return }
+        Write-Shim $prefixo $versao
+        Write-Titulo "ativa agora: $versao"
+        Show-DiagnosticoClaude
+        return
+    }
+
+    $base = Get-BaseOrigem $source $versao
+    $origemZip = Join-Origem $base $nomeZip
+    $origemSums = Join-Origem $base $ChecksumFile
+    Write-Passo "origem:      $origemZip"
+
+    if ($DryRun) {
+        Write-Passo "verificaria o SHA-256 contra $ChecksumFile antes de extrair"
+        if ($AddToPath) { Write-Passo "acrescentaria $bin ao PATH do usuário" }
+        else { Write-Passo "não mexeria no PATH (use -AddToPath)" }
+        Write-Titulo "-DryRun: nada foi baixado, extraído ou escrito."
+        return
+    }
+
+    $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("nox-install-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $temp -Force | Out-Null
+    try {
+        $zip = Join-Path $temp $nomeZip
+        $sums = Join-Path $temp $ChecksumFile
+        Write-Passo "baixando…"
+        Get-Arquivo $origemZip $zip
+        Get-Arquivo $origemSums $sums
+
+        # nada é extraído antes desta linha
+        Assert-Checksum $zip $sums $nomeZip
+
+        if (Test-Path $destinoVersao) { Remove-Item $destinoVersao -Recurse -Force }
+        New-Item -ItemType Directory -Path $destinoVersao -Force | Out-Null
+        Expand-Archive -Path $zip -DestinationPath $destinoVersao -Force
+        Write-Passo "extraído."
+
+        Write-Shim $prefixo $versao
+        Write-Passo "shim criado."
+    } finally {
+        Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    if (Resolve-PermissaoPath $bin) { Add-AoPath $bin }
+    else {
+        Write-Titulo "PATH não foi alterado."
+        Write-Passo "para usar o comando de qualquer pasta, rode:"
+        Write-Passo "  [Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path','User') + ';$bin', 'User')"
+        Write-Passo "ou chame direto: $(Get-CaminhoShim $prefixo)"
+    }
+
+    Write-Titulo "Exponexa $versao instalado."
+    Show-DiagnosticoClaude
+}
+
+# ------------------------------------------------------------------ main
+
+$prefixo = Get-Prefixo $Prefix
+
+if ($ListVersions) { Invoke-ListVersions $prefixo; exit 0 }
+if ($Uninstall) { Invoke-Uninstall $prefixo; exit 0 }
+
+$versao = Resolve-Versao $Version
+Invoke-Install $prefixo $versao $Source
+exit 0
