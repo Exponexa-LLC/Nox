@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # projeto de automação chamado `nox` no PyPI, e ocupar esse nome causaria
 # conflito no mesmo ambiente.
 name = "exponexa-nox"
-version = "0.7.0"
+version = "0.7.1"
 description = "Exponexa — harness de terminal para o Claude Code, com perfis de política e confirmação explícita"
 readme = "README.md"
 requires-python = ">=3.9"

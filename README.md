@@ -63,7 +63,7 @@ Para passar opções, o `iex` não serve — use:
 
 | Opção | O que faz |
 |---|---|
-| `-Version 0.7.0` | fixa uma versão em vez da última; se ela já estiver instalada, volta para ela **sem baixar nada** (é assim que se faz rollback) |
+| `-Version 0.7.1` | fixa uma versão em vez da última; se ela já estiver instalada, volta para ela **sem baixar nada** (é assim que se faz rollback) |
 | `-AddToPath` | acrescenta o comando ao PATH do **usuário** (sem isso, o script só mostra a linha a colar) |
 | `-DryRun` | mostra o plano e não escreve nada |
 | `-ListVersions` | lista o que está instalado e qual está ativa |
@@ -77,7 +77,7 @@ Baixe os arquivos da [release](https://github.com/Exponexa-LLC/Nox/releases),
 confira o hash você mesmo e extraia onde quiser:
 
 ```powershell
-$v = "0.7.0"          # troque pela versão desejada
+$v = "0.7.1"          # troque pela versão desejada
 $zip = "nox-$v-windows-x64.zip"
 irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/$zip" -OutFile $zip
 irm "https://github.com/Exponexa-LLC/Nox/releases/download/v$v/SHA256SUMS" -OutFile SHA256SUMS
